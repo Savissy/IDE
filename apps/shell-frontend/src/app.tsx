@@ -1,444 +1,135 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { loadPlugins } from "./core/pluginRuntime";
+import { CommandPalette } from "./components/commands/CommandPalette";
+import { EditorTabs } from "./components/editor/EditorTabs";
+import { ExplorerTree } from "./components/explorer/ExplorerTree";
+import { BottomViews } from "./components/terminal/BottomViews";
+import { ideStore, useIDEStore } from "./state/store";
 import { MonacoEditor } from "./ui/MonacoEditor";
-import { Terminal } from "./ui/Terminal";
+import { LanguageMode } from "./types";
 
-type Panel = { id: string; title: string; location: string; render: () => any };
-
-type OpenTab = {
-  path: string;
-  title: string;
-  value: string;
-  dirty: boolean;
-};
-
-const API = "http://localhost:8080";
-
-async function apiText(url: string) {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  return r.text();
-}
-
-async function apiPostForm(url: string, data: Record<string, string>) {
-  const r = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(data),
-  });
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  return r.json();
-}
-
-function Icon({ name }: { name: string }) {
-  // Simple inline SVGs (Remix-like)
-  const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none" as const };
-  switch (name) {
-    case "files":
-      return (
-        <svg {...common}>
-          <path d="M4 6h6l2 2h8v12H4V6Z" stroke="currentColor" strokeWidth="2" />
-        </svg>
-      );
-    case "compile":
-      return (
-        <svg {...common}>
-          <path d="M8 7h8M8 12h8M8 17h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          <path d="M4 4h16v16H4V4Z" stroke="currentColor" strokeWidth="2" />
-        </svg>
-      );
-    case "search":
-      return (
-        <svg {...common}>
-          <path d="M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" stroke="currentColor" strokeWidth="2" />
-          <path d="M16.5 16.5 21 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-      );
-    case "home":
-      return (
-        <svg {...common}>
-          <path d="M3 11 12 3l9 8v10H3V11Z" stroke="currentColor" strokeWidth="2" />
-        </svg>
-      );
-    case "play":
-      return (
-        <svg {...common}>
-          <path d="M8 5v14l12-7-12-7Z" fill="currentColor" />
-        </svg>
-      );
-    case "check":
-      return (
-        <svg {...common}>
-          <path d="M20 6 9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-      );
-    case "save":
-      return (
-        <svg {...common}>
-          <path d="M5 4h12l2 2v14H5V4Z" stroke="currentColor" strokeWidth="2" />
-          <path d="M8 4v6h8V4" stroke="currentColor" strokeWidth="2" />
-          <path d="M8 20v-6h8v6" stroke="currentColor" strokeWidth="2" />
-        </svg>
-      );
-    default:
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
-        </svg>
-      );
-  }
-}
-
-function RemixHome({ onStartCoding }: { onStartCoding: () => void }) {
-  return (
-    <div className="home">
-      <div className="homeTitle">CARDANO IDE</div>
-
-      <div className="homeSearch">
-        <input className="homeSearchInput" placeholder="Search Documentation" />
-        <button className="homeSearchBtn" title="Search">
-          <Icon name="search" />
-        </button>
-      </div>
-
-      <div className="homeSub">Explore. Prototype. Build on Cardano.</div>
-
-      <div className="homePills">
-        <button className="pill primary" onClick={onStartCoding}>Start Coding</button>
-        <button className="pill">Plutus Starter</button>
-        <button className="pill">Minting Policy</button>
-        <button className="pill">Validator Script</button>
-      </div>
-
-      <div className="homeSection">
-        <div className="homeSectionTitle">Recent Workspaces</div>
-        <div className="homeLinks">
-          <a className="homeLink" href="#">Basic - 1</a>
-          <a className="homeLink" href="#">default_workspace</a>
-        </div>
-      </div>
-
-      <div className="homeSection">
-        <div className="homeSectionTitle">Files</div>
-        <div className="homeFileBtns">
-          <button className="fileBtn"><span className="fileBtnIcon">📄</span>New</button>
-          <button className="fileBtn"><span className="fileBtnIcon">⬆️</span>Open</button>
-          <button className="fileBtn"><span className="fileBtnIcon">🐙</span>Gist</button>
-          <button className="fileBtn"><span className="fileBtnIcon">🔗</span>Clone</button>
-          <button className="fileBtn wide"><span className="fileBtnIcon">🖥️</span>Connect to Local Filesystem</button>
-        </div>
-      </div>
-    </div>
-  );
+function registerDefaultCommands() {
+  const once = (id: string, title: string, handler: () => void, keybinding?: string) => ideStore.registerCommand({ id, title, handler, keybinding });
+  once("file.new", "File: New File", () => ideStore.createNode("root", "file", "untitled.ts"), "Ctrl/Cmd+N");
+  once("file.newFolder", "File: New Folder", () => ideStore.createNode("root", "folder", "folder"));
+  once("file.rename", "File: Rename", () => ideStore.toast("Use rename icon in explorer"));
+  once("file.delete", "File: Delete", () => ideStore.toast("Use delete icon in explorer"));
+  once("file.save", "File: Save", () => { const active = ideStore.getState().activeTabId; if (active) ideStore.saveFile(active); }, "Ctrl/Cmd+S");
+  once("file.saveAll", "File: Save All", () => ideStore.saveAll(), "Ctrl/Cmd+Alt+S");
+  once("editor.openFile", "Editor: Open File", () => ideStore.toast("Open file from explorer/quick open"));
+  once("editor.closeTab", "Editor: Close Tab", () => { const active = ideStore.getState().activeTabId; if (active) ideStore.closeTab(active); }, "Ctrl/Cmd+W");
+  once("editor.splitVertical", "Editor: Split Vertical", () => ideStore.setSplitOrientation("vertical"));
+  once("editor.splitHorizontal", "Editor: Split Horizontal", () => ideStore.setSplitOrientation("horizontal"));
+  once("view.toggleTerminal", "View: Toggle Terminal", () => ideStore.toggleBottomPanel());
+  once("view.toggleSidePanel", "View: Toggle Side Panel", () => ideStore.toggleSidePanel());
+  once("view.toggleTheme", "View: Toggle Theme", () => ideStore.toggleTheme());
+  once("workspace.export", "Workspace: Export", () => ideStore.exportWorkspace());
+  once("workspace.import", "Workspace: Import", () => document.getElementById("workspace-import")?.click());
+  once("workspace.reset", "Workspace: Reset", () => ideStore.resetWorkspace());
+  once("editor.reopenClosedTab", "Editor: Reopen Closed Tab", () => ideStore.reopenClosedTab(), "Ctrl/Cmd+Shift+T");
+  once("editor.format", "Editor: Format Document", () => ideStore.toast("Formatting hook executed"));
 }
 
 export default function App() {
-  const project = "demo";
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickQ, setQuickQ] = useState("");
+  const [gotoOpen, setGotoOpen] = useState(false);
+  const [gotoLine, setGotoLine] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
 
-  const [toast, setToast] = useState<string | null>(null);
-  const [panels, setPanels] = useState<Panel[]>([]);
-  const [commands, setCommands] = useState<any[]>([]);
-  const [toolbar, setToolbar] = useState<any[]>([]);
-  const [activeTool, setActiveTool] = useState<string>("file.explorer");
-  const [activeTab, setActiveTab] = useState<"home" | "editor">("home");
+  const state = useIDEStore((s) => s);
+  const activeTab = state.openTabs.find((t) => t.id === state.activeTabId) ?? null;
+  const activeNode = activeTab ? state.nodes[activeTab.nodeId] : null;
 
-  // ✅ New: multi-tab state
-  const [tabs, setTabs] = useState<OpenTab[]>([]);
-  const [activePath, setActivePath] = useState<string | null>(null);
+  useEffect(() => registerDefaultCommands(), []);
 
-  // Keep these for your existing compile logic + header label
-  const activeFile = activePath ?? "Main.hs";
-
-  // Editor reads from active tab
-  const activeTabObj = useMemo(
-    () => tabs.find((t) => t.path === activePath) ?? null,
-    [tabs, activePath]
-  );
-
-  const [sseUrl, setSseUrl] = useState<string | null>(null);
-
-  const store = useMemo(
-    () => ({
-      panels,
-      commands,
-      toolbar,
-      activeFile,
-      activePanelId: activeTool,
-      notify: (m: string) => {
-        setToast(m);
-        setTimeout(() => setToast(null), 2500);
-      },
-      openPanel: (id: string) => setActiveTool(id),
-
-      // plugins might call store.setActiveFile
-      setActiveFile: (path: string) => {
-        setActiveTab("editor");
-        setActivePath(path);
-      },
-    }),
-    [panels, commands, toolbar, activeFile, activeTool]
-  );
-
-  // Load plugins once
-  useMemo(() => {
-    if (panels.length === 0 && commands.length === 0) {
-      loadPlugins(store, project);
-      setPanels([...store.panels]);
-      setCommands([...store.commands]);
-      setToolbar([...store.toolbar]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const leftPanels = panels.filter((p) => p.location === "left");
-  const activeLeft = leftPanels.find((p) => p.id === activeTool) ?? leftPanels[0];
-
-  // ✅ Open file (used by tabs + plugin command fallback)
-  async function openFile(path: string) {
-    // if already open, just activate
-    const existing = tabs.find((t) => t.path === path);
-    if (existing) {
-      setActivePath(path);
-      setActiveTab("editor");
-      return;
-    }
-
-    const content = await apiText(
-      `${API}/api/workspace/${project}/read?path=${encodeURIComponent(path)}`
-    );
-
-    const title = path.split("/").pop() || path;
-    setTabs((prev) => [...prev, { path, title, value: content, dirty: false }]);
-    setActivePath(path);
-    setActiveTab("editor");
-  }
-
-  // ✅ Save active
-  async function saveActive() {
-    if (!activePath) {
-      store.notify("No file open");
-      return;
-    }
-    const t = tabs.find((x) => x.path === activePath);
-    if (!t) return;
-
-    await apiPostForm(`${API}/api/workspace/${project}/write`, {
-      path: t.path,
-      content: t.value,
-    });
-
-    setTabs((prev) => prev.map((x) => (x.path === t.path ? { ...x, dirty: false } : x)));
-    store.notify(`Saved ${t.title}`);
-  }
-
-  // Ctrl+S
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        saveActive().catch(() => {});
-      }
+      const meta = e.ctrlKey || e.metaKey;
+      if (meta && e.shiftKey && e.key.toLowerCase() === "p") { e.preventDefault(); setPaletteOpen(true); }
+      if (meta && e.key.toLowerCase() === "p") { e.preventDefault(); setQuickOpen(true); }
+      if (meta && e.key.toLowerCase() === "s") { e.preventDefault(); ideStore.executeCommand("file.save"); }
+      if (meta && e.altKey && e.key.toLowerCase() === "s") { e.preventDefault(); ideStore.executeCommand("file.saveAll"); }
+      if (meta && e.key.toLowerCase() === "w") { e.preventDefault(); ideStore.executeCommand("editor.closeTab"); }
+      if (meta && e.shiftKey && e.key.toLowerCase() === "t") { e.preventDefault(); ideStore.executeCommand("editor.reopenClosedTab"); }
+      if (meta && e.key.toLowerCase() === "g") { e.preventDefault(); setGotoOpen(true); }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabs, activePath]);
+  }, []);
 
-  // ✅ Global fallback used by your file explorer plugin if host.commands isn’t typed
-  useEffect(() => {
-    (window as any).__IDE_OPEN_FILE__ = (path: string) => openFile(path);
-  }, [tabs]);
+  const searchResults = useMemo(() => (search ? ideStore.searchInFiles(search) : []), [search, state.nodes]);
+  const quickItems = useMemo(() => Object.values(state.nodes).filter((n) => n.type === "file" && n.name.toLowerCase().includes(quickQ.toLowerCase())), [quickQ, state.nodes]);
 
-  function closeTab(path: string) {
-    setTabs((prev) => {
-      const idx = prev.findIndex((t) => t.path === path);
-      if (idx === -1) return prev;
+  const splitClass = state.layout.splitOrientation === "vertical" ? "split-vertical" : state.layout.splitOrientation === "horizontal" ? "split-horizontal" : "split-none";
 
-      const next = prev.filter((t) => t.path !== path);
-
-      if (activePath === path) {
-        const fallback = next[idx - 1]?.path ?? next[idx]?.path ?? null;
-        setActivePath(fallback);
-        setActiveTab(fallback ? "editor" : "home");
-      }
-      return next;
-    });
-  }
-
-  async function runCompile() {
-    const compileItem = toolbar.find((t: any) => t.commandId === "plutus.compile") ?? toolbar[0];
-    const cmd = commands.find((c: any) => c.id === (compileItem?.commandId ?? "plutus.compile"));
-    if (!cmd) {
-      store.notify("Compile command not registered");
-      return;
-    }
-    await cmd.handler({
-      project,
-      setSseUrl,
-      getActiveFile: () => activeFile,
-    });
-  }
-
-  return (
-    <div className="remixRoot">
-      {/* Left icon bar */}
-      <div className="iconBar">
-        <div className="logoDot" title="Cardano IDE" />
-        <div className="iconGroup">
-          <button
-            className={"iconBtn " + (activeTool === "file.explorer" ? "active" : "")}
-            onClick={() => setActiveTool("file.explorer")}
-            title="File Explorer"
-          >
-            <Icon name="files" />
-          </button>
-
-          <button
-            className={"iconBtn " + (activeTool === "compiler.panel" ? "active" : "")}
-            onClick={() => setActiveTool("compiler.panel")}
-            title="Compiler"
-          >
-            <Icon name="compile" />
-          </button>
-        </div>
-
-        <div className="iconSpacer" />
-
-        <button className="iconBtn" title="Settings">
-          <span style={{ fontSize: 18 }}>⚙️</span>
-        </button>
+  return <div className={`app ${state.theme}`}>
+    <input id="workspace-import" type="file" accept="application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) ideStore.importWorkspace(f); }} />
+    <header className="topbar">
+      <div>Cardano IDE</div>
+      <select><option>default_workspace</option><option>plutus_lab</option></select>
+      <div className="topbarActions">
+        <button>Build (Aiken/Plutus/Helios)</button>
+        <button>Connect Wallet (CIP-30)</button>
+        <button onClick={() => ideStore.executeCommand("view.toggleTheme")}>Theme</button>
+        <button onClick={() => setPaletteOpen(true)}>Command Palette</button>
       </div>
+    </header>
 
-      {/* Side panel like Remix File Explorer */}
-      <div className="sidePanel">
-        <div className="sideHeader">
-          <div className="sideTitle">FILE EXPLORER</div>
-          <div className="sideHeaderRight">
-            <span className="tinyIcon" title="OK"><Icon name="check" /></span>
-            <span className="tinyIcon" title="More">›</span>
-          </div>
+    <div className="workspace">
+      <aside className="activityBar">
+        {(["explorer", "search", "source", "tests", "extensions"] as const).map((a) => <button key={a} className={state.activity === a ? "active" : ""} onClick={() => ideStore.setActivity(a)}>{a[0].toUpperCase()}</button>)}
+      </aside>
+
+      {state.layout.showSidePanel && <aside className="sidePanel" style={{ width: state.layout.sideWidth }}>
+        <div className="panelTitle">{state.activity.toUpperCase()}</div>
+        {state.activity === "explorer" && <ExplorerTree />}
+        {state.activity === "search" && <div><input placeholder="Search in files" value={search} onChange={(e) => setSearch(e.target.value)} />{searchResults.map((r) => <button key={r.nodeId} className="searchItem" onClick={() => ideStore.openFile(r.nodeId)}>{r.path}: {r.preview}</button>)}</div>}
+        {state.activity !== "explorer" && state.activity !== "search" && <div className="empty">{state.activity} panel (stub)</div>}
+      </aside>}
+      {state.layout.showSidePanel && <div className="resizeX" onMouseDown={(e) => {
+        const start = e.clientX; const initial = state.layout.sideWidth;
+        const move = (me: MouseEvent) => ideStore.resizeSidePanel(initial + (me.clientX - start));
+        const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+        window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+      }} />}
+
+      <main className={`main ${splitClass}`}>
+        <div className="editorPane">
+          <EditorTabs splitId="primary" />
+          <div className="breadcrumbs">{activeTab?.path ?? "No file selected"}</div>
+          {activeNode ? <MonacoEditor value={activeNode.content ?? ""} language={activeNode.language ?? "plaintext"} theme={state.theme} onCursor={(line, column) => ideStore.setCursor(line, column)} gotoLine={gotoLine} onChange={(v) => activeTab && ideStore.updateContent(activeTab.id, v)} /> : <div className="empty">Open a file from Explorer or Quick Open (Ctrl/Cmd+P).</div>}
         </div>
+        {state.layout.splitOrientation !== "none" && <div className="editorPane secondary">
+          <EditorTabs splitId="primary" />
+          <div className="empty">Secondary split view (mirrored active tab). <button onClick={() => ideStore.setSplitOrientation("none")}>Close split</button></div>
+        </div>}
 
-        <div className="workspaceRow">
-          <div className="workspaceLabel">WORKSPACES</div>
-          <button className="signinBtn">Sign in</button>
-        </div>
-
-        <div className="workspaceSelect">
-          <span className="wsDot" />
-          <span className="wsName">Basic - 1</span>
-          <span className="wsCaret">▾</span>
-        </div>
-
-        <div className="fileActionRow">
-          <button className="miniAction" title="New File">📄</button>
-          <button className="miniAction" title="New Folder">📁</button>
-          <button className="miniAction" title="Upload">⬆️</button>
-          <button className="miniAction" title="Download">⬇️</button>
-          <button className="miniAction" title="Git">🐙</button>
-          <button className="miniAction" title="Link">🔗</button>
-        </div>
-
-        <div className="sideBody">
-          <div className="panelHost">
-            {activeLeft?.render?.()}
-          </div>
-        </div>
-
-        <div className="sideFooter">Initialize as git repo</div>
-      </div>
-
-      {/* Main content */}
-      <div className="content">
-        {/* top action bar + tabs like Remix */}
-        <div className="topStrip">
-          <div className="topActions">
-            <button className="topIcon" title="Run" onClick={runCompile}><Icon name="play" /></button>
-            <button className="topIcon" title="Compile" onClick={runCompile}><Icon name="compile" /></button>
-            <button className="topIcon" title="Save (Ctrl+S)" onClick={() => saveActive().catch(() => {})}>
-              <Icon name="save" />
-            </button>
-            <button className="topIcon" title="Search"><Icon name="search" /></button>
-          </div>
-
-          {/* ✅ Real tabs */}
-          <div className="tabsRow">
-            <button
-              className={"tabBtn " + (activeTab === "home" ? "active" : "")}
-              onClick={() => setActiveTab("home")}
-            >
-              <Icon name="home" /> <span>Home</span>
-            </button>
-
-            {tabs.map((t) => (
-              <div
-                key={t.path}
-                className={"tabChip " + (activePath === t.path && activeTab === "editor" ? "active" : "")}
-              >
-                <button
-                  className="tabChipBtn"
-                  onClick={() => {
-                    setActivePath(t.path);
-                    setActiveTab("editor");
-                  }}
-                  title={t.path}
-                >
-                  <span className="dot">{t.dirty ? "●" : ""}</span>
-                  <span>{t.title}</span>
-                </button>
-                <button className="tabClose" onClick={() => closeTab(t.path)} title="Close">
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <div className="topRight">
-            <button className="compileBtn" onClick={runCompile}>Compile</button>
-          </div>
-        </div>
-
-        <div className="mainStage">
-          {activeTab === "home" ? (
-            <RemixHome onStartCoding={() => setActiveTab("editor")} />
-          ) : (
-            <div className="editorWrap">
-              <MonacoEditor
-                value={activeTabObj?.value ?? "-- select a file\n"}
-                onChange={(v) => {
-                  if (!activePath) return;
-                  setTabs((prev) =>
-                    prev.map((x) => (x.path === activePath ? { ...x, value: v, dirty: true } : x))
-                  );
-                }}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Bottom console (Remix-like) */}
-        <div className="console">
-          <div className="consoleTop">
-            <div className="consoleTitle">terminal</div>
-            <div className="consoleControls">
-              <span className="consoleStat">0</span>
-              <label className="consoleCheck">
-                <input type="checkbox" /> Listen on all transactions
-              </label>
-              <input className="consoleFilter" placeholder="Filter with transaction hash or address" />
-            </div>
-          </div>
-          <div className="consoleBody">
-            <Terminal sseUrl={sseUrl} />
-          </div>
-          <div className="consoleBottomBar">
-            <div className="tip">Did you know? You can export scripts and build transactions with Lucid.</div>
-            <div className="tipRight">Plutus tools</div>
-          </div>
-        </div>
-
-        {toast && <div className="toast">{toast}</div>}
-      </div>
+        {state.layout.showBottomPanel && <>
+          <div className="resizeY" onMouseDown={(e) => {
+            const start = e.clientY; const initial = state.layout.bottomHeight;
+            const move = (me: MouseEvent) => ideStore.resizeBottomPanel(initial - (me.clientY - start));
+            const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+            window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+          }} />
+          <section className="bottomPanel" style={{ height: state.layout.bottomHeight }}><BottomViews /></section>
+        </>}
+      </main>
     </div>
-  );
+
+    <footer className="statusbar">
+      <span>Ln {state.cursor.line}, Col {state.cursor.column}</span>
+      <select value={activeNode?.language ?? state.activeLanguage} onChange={(e) => activeTab && ideStore.setLanguage(activeTab.id, e.target.value as LanguageMode)}>
+        <option value="typescript">TypeScript</option><option value="javascript">JavaScript</option><option value="json">JSON</option><option value="markdown">Markdown</option><option value="plaintext">Plain Text</option>
+      </select>
+      <span>{state.settings.lineEnding}</span><span>{state.settings.insertSpaces ? `Spaces: ${state.settings.tabSize}` : "Tabs"}</span><span>Branch: {state.branch}</span>
+    </footer>
+
+    <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+
+    {quickOpen && <div className="overlay" onClick={() => setQuickOpen(false)}><div className="palette" onClick={(e) => e.stopPropagation()}><input autoFocus className="paletteInput" placeholder="Quick Open" value={quickQ} onChange={(e) => setQuickQ(e.target.value)} />{quickItems.map((f) => <button key={f.id} className="paletteItem" onClick={() => { ideStore.openFile(f.id); setQuickOpen(false); }}>{f.name}</button>)}</div></div>}
+    {gotoOpen && <div className="overlay" onClick={() => setGotoOpen(false)}><div className="goto" onClick={(e) => e.stopPropagation()}><p>Go to line</p><input autoFocus type="number" onKeyDown={(e) => { if (e.key === "Enter") { setGotoLine(Number((e.target as HTMLInputElement).value)); setGotoOpen(false); } }} /></div></div>}
+
+    <div className="toasts">{state.toasts.map((t) => <div className={`toast ${t.kind}`} key={t.id}>{t.message}</div>)}</div>
+  </div>;
 }
