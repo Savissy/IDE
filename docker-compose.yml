@@ -1,0 +1,36 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  php-api:
+    build: ./apps/php-api
+    environment:
+      - REDIS_HOST=redis
+      - WORKSPACE_ROOT=/data/workspaces
+    volumes:
+      - ./data/workspaces:/data/workspaces
+    ports: ["8080:8080"]
+    depends_on: [redis]
+
+  compiler-worker:
+    build: ./apps/compiler-worker
+    environment:
+      - REDIS_HOST=redis
+      - WORKSPACE_ROOT=/data/workspaces
+      - DEFAULT_PROJECT=demo
+      - COMPILE_CMD=bash -lc "cd /data/workspaces/demo && cabal build 2>&1"
+    volumes:
+      - ./data/workspaces:/data/workspaces
+    depends_on: [redis]
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./:/app
+    ports: ["5173:5173"]
+    environment:
+      - NODE_OPTIONS=--dns-result-order=ipv4first
+    command: sh -lc "npm i -g pnpm@9 && pnpm i && pnpm -C apps/shell-frontend dev --host 0.0.0.0"
+    depends_on: [php-api]
