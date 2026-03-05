@@ -1,6 +1,8 @@
 FROM php:8.3-cli-alpine
 
-RUN apk add --no-cache bash curl
+# ✅ Add git (needed for clone), plus bash/curl already used
+RUN apk add --no-cache bash curl git
+
 WORKDIR /app
 
 COPY composer.json /app/

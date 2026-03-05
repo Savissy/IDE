@@ -8,8 +8,14 @@ use Slim\App;
 require_once __DIR__ . "/Workspace.php";
 require_once __DIR__ . "/Jobs.php";
 
+/**
+ * ✅ NEW: clone + gist import service
+ * (we keep it separate so existing Workspace.php remains untouched)
+ */
+require_once __DIR__ . "/workspaceImport.php";
+
 return function (App $app) {
-    // Workspaces
+  // Workspaces
   $app->get("/api/workspaces", function (Request $req, Response $res) {
     $res->getBody()->write(json_encode(["items" => Workspace::listWorkspaces()]));
     return $res->withHeader("Content-Type", "application/json");
@@ -122,6 +128,40 @@ return function (App $app) {
     return $res->withHeader("Content-Type", "application/json");
   });
 
+  // -----------------------------
+  // ✅ NEW: Clone a GitHub repo into workspace
+  // POST /api/workspace/{project}/clone
+  // body: repoUrl=...
+  // returns: { ok: bool, files?: [{path, content}], error?: string }
+  // -----------------------------
+  $app->post("/api/workspace/{project}/clone", function (Request $req, Response $res, array $args) {
+    $project = (string)($args["project"] ?? "default_workspace");
+    $body = (array)($req->getParsedBody() ?? []);
+    $repoUrl = (string)($body["repoUrl"] ?? "");
+
+    $result = WorkspaceImport::cloneRepo($project, $repoUrl);
+
+    $res->getBody()->write(json_encode($result));
+    return $res->withHeader("Content-Type", "application/json");
+  });
+
+  // -----------------------------
+  // ✅ NEW: Import GitHub Gist into workspace
+  // POST /api/workspace/{project}/gist
+  // body: gistUrl=...
+  // returns: { ok: bool, files?: [{path, content}], error?: string }
+  // -----------------------------
+  $app->post("/api/workspace/{project}/gist", function (Request $req, Response $res, array $args) {
+    $project = (string)($args["project"] ?? "default_workspace");
+    $body = (array)($req->getParsedBody() ?? []);
+    $gistUrl = (string)($body["gistUrl"] ?? "");
+
+    $result = WorkspaceImport::importGist($project, $gistUrl);
+
+    $res->getBody()->write(json_encode($result));
+    return $res->withHeader("Content-Type", "application/json");
+  });
+
   $app->post("/api/build/{project}/start", function (Request $req, Response $res, array $args) {
     $project = $args["project"];
     $jobId = Jobs::startCompile($project);
@@ -129,8 +169,20 @@ return function (App $app) {
     return $res->withHeader("Content-Type", "application/json");
   });
 
-    $app->get("/api/build/{jobId}/stream", function (Request $req, Response $res, array $args) {
+  $app->get("/api/build/{jobId}/stream", function (Request $req, Response $res, array $args) {
     Jobs::streamLogs($args["jobId"]);
     exit; // <-- keep SSE from returning through Slim middleware
   });
 };
+
+  // ✅ Clone repo into workspace
+  $app->post("/api/workspace/{project}/clone", function (Request $req, Response $res, array $args) {
+    $project = (string)$args["project"];
+    $body = (array)($req->getParsedBody() ?? []);
+    $repoUrl = (string)($body["repoUrl"] ?? "");
+
+    $result = WorkspaceImport::cloneRepo($project, $repoUrl);
+
+    $res->getBody()->write(json_encode($result));
+    return $res->withHeader("Content-Type", "application/json");
+  });

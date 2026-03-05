@@ -1,0 +1,82 @@
+body {
+  background: linear-gradient(135deg, #1e3c72, #2a5298);
+  font-family: Arial, sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+.card {
+  background: white;
+  padding: 30px;
+  border-radius: 12px;
+  width: 400px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+}
+
+h1 {
+  text-align: center;
+  color: #2a5298;
+}
+
+input {
+  width: 100%;
+  margin: 6px 0;
+  padding: 8px;
+}
+
+button {
+  width: 100%;
+  padding: 10px;
+  background: #2a5298;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #1e3c72;
+}
+
+#log {
+  margin-top: 10px;
+  font-size: 14px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 12px;
+}
+
+.readonly {
+  background: linear-gradient(135deg, #1e293b, #0f172a);
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: #22c55e;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.readonly small {
+  color: #94a3b8;
+  font-weight: 400;
+}
+.log-box {
+  margin-top: 12px;
+  padding: 10px;
+  height: 60px;          /* fixed height */
+  max-height: 120px;
+  overflow-y: auto;       /* scroll instead of overflow */
+  overflow-x: hidden;
+  border: 1px solid #ccc;
+  background: #f9f9f9;
+  font-size: 14px;
+  white-space: pre-wrap;  /* wrap long text */
+  word-break: break-word;
+}
+

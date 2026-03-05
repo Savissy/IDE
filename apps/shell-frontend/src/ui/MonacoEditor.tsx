@@ -17,36 +17,61 @@ export function MonacoEditor({
   onCursor: (line: number, column: number) => void;
   gotoLine?: number | null;
 }) {
-  const divRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mountRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
 
+  // Prevent feedback loops when we setValue programmatically
+  const applyingExternalValueRef = useRef(false);
+
   useEffect(() => {
-    if (!divRef.current) return;
-    const ed = monaco.editor.create(divRef.current, {
+    if (!mountRef.current) return;
+
+    const ed = monaco.editor.create(mountRef.current, {
       value,
       language,
       automaticLayout: true,
       theme: theme === "dark" ? "vs-dark" : "vs",
       minimap: { enabled: false },
+      scrollBeyondLastLine: false,
     });
+
     editorRef.current = ed;
 
-    const sub = ed.onDidChangeModelContent(() => onChange(ed.getValue()));
-    const cursorSub = ed.onDidChangeCursorPosition((e) => onCursor(e.position.lineNumber, e.position.column));
+    const sub = ed.onDidChangeModelContent(() => {
+      if (applyingExternalValueRef.current) return;
+      onChange(ed.getValue());
+    });
+
+    const cursorSub = ed.onDidChangeCursorPosition((e) =>
+      onCursor(e.position.lineNumber, e.position.column)
+    );
+
     return () => {
       sub.dispose();
       cursorSub.dispose();
       ed.dispose();
+      editorRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     const ed = editorRef.current;
     if (!ed) return;
+
+    // Theme + language
     const model = ed.getModel();
     if (model) monaco.editor.setModelLanguage(model, language);
     monaco.editor.setTheme(theme === "dark" ? "vs-dark" : "vs");
-    if (ed.getValue() !== value) ed.setValue(value);
+
+    // Content sync (guarded)
+    const current = ed.getValue();
+    if (current !== value) {
+      applyingExternalValueRef.current = true;
+      ed.setValue(value);
+      applyingExternalValueRef.current = false;
+    }
   }, [value, language, theme]);
 
   useEffect(() => {
@@ -57,5 +82,14 @@ export function MonacoEditor({
     ed.focus();
   }, [gotoLine]);
 
-  return <div ref={divRef} style={{ height: "100%", width: "100%" }} />;
+  /**
+   * IMPORTANT for your overlay issue:
+   * Wrap Monaco in a positioned container with overflow hidden,
+   * so Monaco's internal layers can't visually overlap your tabs/terminal.
+   */
+  return (
+    <div className="monacoWrap" ref={containerRef}>
+      <div ref={mountRef} className="monacoMount" />
+    </div>
+  );
 }
