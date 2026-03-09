@@ -22,13 +22,60 @@ export async function workspacesCreate(name: string) {
   return safeJson(r) as Promise<{ ok: boolean }>;
 }
 
+export async function workspacesRename(oldName: string, newName: string) {
+  const r = await fetch(`${API_BASE}/api/workspaces/rename`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ oldName, newName }),
+  });
+  return safeJson(r) as Promise<{ ok: boolean }>;
+}
+
+export async function workspacesDelete(name: string) {
+  const r = await fetch(`${API_BASE}/api/workspaces/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ name }),
+  });
+  return safeJson(r) as Promise<{ ok: boolean }>;
+}
+
+export async function workspacesDeleteAll(name: string) {
+  const r = await fetch(`${API_BASE}/api/workspaces/delete-all`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ name }),
+  });
+  return safeJson(r) as Promise<{ ok: boolean }>;
+}
+
+export async function workspacesDownload(project: string) {
+  const r = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(project)}/download`);
+  return r.blob();
+}
+
+export async function workspacesBackup(project: string) {
+  const r = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(project)}/backup`);
+  return r.blob();
+}
+
+export async function workspacesRestore(project: string, file: File) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const r = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(project)}/restore`, {
+    method: "POST",
+    body: fd,
+  });
+  return safeJson(r) as Promise<{ ok: boolean; error?: string }>;
+}
+
 export async function wsTree(project: string, path: string) {
-  const r = await fetch(`${API_BASE}/api/workspace/${project}/tree?path=${encodeURIComponent(path)}`);
+  const r = await fetch(`${API_BASE}/api/workspace/${encodeURIComponent(project)}/tree?path=${encodeURIComponent(path)}`);
   return safeJson(r) as Promise<{ items: any[] }>;
 }
 
 export async function wsMkdir(project: string, path: string) {
-  const r = await fetch(`${API_BASE}/api/workspace/${project}/mkdir`, {
+  const r = await fetch(`${API_BASE}/api/workspace/${encodeURIComponent(project)}/mkdir`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ path }),
@@ -37,7 +84,7 @@ export async function wsMkdir(project: string, path: string) {
 }
 
 export async function wsTouch(project: string, path: string) {
-  const r = await fetch(`${API_BASE}/api/workspace/${project}/touch`, {
+  const r = await fetch(`${API_BASE}/api/workspace/${encodeURIComponent(project)}/touch`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ path }),
@@ -46,7 +93,7 @@ export async function wsTouch(project: string, path: string) {
 }
 
 export async function wsDelete(project: string, path: string) {
-  const r = await fetch(`${API_BASE}/api/workspace/${project}/delete`, {
+  const r = await fetch(`${API_BASE}/api/workspace/${encodeURIComponent(project)}/delete`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ path }),
@@ -55,7 +102,7 @@ export async function wsDelete(project: string, path: string) {
 }
 
 export async function wsRename(project: string, from: string, to: string) {
-  const r = await fetch(`${API_BASE}/api/workspace/${project}/rename`, {
+  const r = await fetch(`${API_BASE}/api/workspace/${encodeURIComponent(project)}/rename`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ from, to }),
@@ -66,7 +113,7 @@ export async function wsRename(project: string, from: string, to: string) {
 export async function wsUpload(project: string, dir: string, file: File) {
   const fd = new FormData();
   fd.append("file", file);
-  const r = await fetch(`${API_BASE}/api/workspace/${project}/upload?dir=${encodeURIComponent(dir)}`, {
+  const r = await fetch(`${API_BASE}/api/workspace/${encodeURIComponent(project)}/upload?dir=${encodeURIComponent(dir)}`, {
     method: "POST",
     body: fd,
   });
@@ -74,17 +121,17 @@ export async function wsUpload(project: string, dir: string, file: File) {
 }
 
 export async function wsList(project: string, path: string) {
-  const r = await fetch(`${API_BASE}/api/workspace/${project}/list?path=${encodeURIComponent(path)}`);
+  const r = await fetch(`${API_BASE}/api/workspace/${encodeURIComponent(project)}/list?path=${encodeURIComponent(path)}`);
   return safeJson(r) as Promise<{ items: string[] }>;
 }
 
 export async function wsRead(project: string, path: string) {
-  const r = await fetch(`${API_BASE}/api/workspace/${project}/read?path=${encodeURIComponent(path)}`);
+  const r = await fetch(`${API_BASE}/api/workspace/${encodeURIComponent(project)}/read?path=${encodeURIComponent(path)}`);
   return safeJson(r) as Promise<{ content: string }>;
 }
 
 export async function wsWrite(project: string, path: string, content: string) {
-  const r = await fetch(`${API_BASE}/api/workspace/${project}/write`, {
+  const r = await fetch(`${API_BASE}/api/workspace/${encodeURIComponent(project)}/write`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ path, content }),
@@ -93,22 +140,16 @@ export async function wsWrite(project: string, path: string, content: string) {
 }
 
 export async function startCompile(project: string) {
-  const r = await fetch(`${API_BASE}/api/build/${project}/start`, { method: "POST" });
+  const r = await fetch(`${API_BASE}/api/build/${encodeURIComponent(project)}/start`, { method: "POST" });
   return safeJson(r) as Promise<{ jobId: string }>;
 }
 
 export function streamUrl(jobId: string) {
-  return `${API_BASE}/api/build/${jobId}/stream`;
+  return `${API_BASE}/api/build/${encodeURIComponent(jobId)}/stream`;
 }
 
-/**
- * Clone repo (requires backend implementation)
- * Expected response:
- *  { ok: true, files: [{ path: "src/Main.ts", content: "..." }, ...] }
- * or { ok: false, error: "..." }
- */
 export async function wsClone(project: string, repoUrl: string) {
-  const r = await fetch(`${API_BASE}/api/workspace/${project}/clone`, {
+  const r = await fetch(`${API_BASE}/api/workspace/${encodeURIComponent(project)}/clone`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ repoUrl }),
@@ -117,12 +158,12 @@ export async function wsClone(project: string, repoUrl: string) {
 }
 
 export async function wsGist(project: string, gistUrl: string) {
-  const r = await fetch(`${API_BASE}/api/workspace/${project}/gist`, {
+  const r = await fetch(`${API_BASE}/api/workspace/${encodeURIComponent(project)}/gist`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ gistUrl }),
   });
-  return r.json() as Promise<{
+  return safeJson(r) as Promise<{
     ok: boolean;
     error?: string;
     files?: Array<{ path: string; content: string }>;

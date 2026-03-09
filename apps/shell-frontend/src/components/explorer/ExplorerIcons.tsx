@@ -108,3 +108,88 @@ export function IconDoc({ size = 16, title }: Props) {
     </svg>
   );
 }
+
+/** Remix-like square menu button */
+export function IconWorkspaceMenu({ size = 16, title }: Props) {
+  return (
+    <svg {...common(size)} aria-label={title}>
+      <rect x="4" y="4" width="16" height="16" rx="2.5" stroke="currentColor" strokeWidth="2" />
+      <path d="M8 9h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8 12h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8 15h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function IconCheck({ size = 16, title }: Props) {
+  return (
+    <svg {...common(size)} aria-label={title}>
+      <path d="M5 12.5l4 4 10-10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function IconPlus({ size = 16, title }: Props) {
+  return (
+    <svg {...common(size)} aria-label={title}>
+      <path d="M12 5v14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function IconBackup({ size = 16, title }: Props) {
+  return (
+    <svg {...common(size)} aria-label={title}>
+      <path d="M20 11a8 8 0 1 1-2.34-5.66L20 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M20 4v4h-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function IconRestore({ size = 16, title }: Props) {
+  return (
+    <svg {...common(size)} aria-label={title}>
+      <path d="M4 11a8 8 0 1 0 2.34-5.66L4 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 4v4h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function IconTrash({ size = 16, title }: Props) {
+  return (
+    <svg {...common(size)} aria-label={title}>
+      <path d="M5 7h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M9 7V5h6v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M7 7l1 12h8l1-12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function IconEdit({ size = 16, title }: Props) {
+  return (
+    <svg {...common(size)} aria-label={title}>
+      <path d="M4 20h4l10-10-4-4L4 16v4Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="m12 6 4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function IconDownload({ size = 16, title }: Props) {
+  return (
+    <svg {...common(size)} aria-label={title}>
+      <path d="M12 4v10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="m8 10 4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 19h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function IconClone({ size = 16, title }: Props) {
+  return (
+    <svg {...common(size)} aria-label={title}>
+      <rect x="9" y="9" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="2" />
+      <rect x="5" y="5" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}

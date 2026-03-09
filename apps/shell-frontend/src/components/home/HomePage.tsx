@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
-import { ideStore } from "../../state/store";
+import { ideStore, useIDEStore } from "../../state/store";
 
 function Icon({ name }: { name: string }) {
   const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none" as const };
@@ -7,11 +7,7 @@ function Icon({ name }: { name: string }) {
     case "search":
       return (
         <svg {...common}>
-          <path
-            d="M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z"
-            stroke="currentColor"
-            strokeWidth="2"
-          />
+          <path d="M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" stroke="currentColor" strokeWidth="2" />
           <path d="M16.5 16.5 21 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>
       );
@@ -39,9 +35,15 @@ export function HomePage({
   onMintingPolicy: () => void;
   onValidatorScript: () => void;
 }) {
-  // Keep your UI stable: we only wire actions to the buttons.
-  const onNew = () => {
-    ideStore.createNode("root", "file", "untitled.ts");
+  const workspaces = useIDEStore((s) => s.workspaces);
+  const currentWorkspace = useIDEStore((s) => s.currentWorkspace);
+
+  useEffect(() => {
+    ideStore.initWorkspaceSystem();
+  }, []);
+
+  const onNew = async () => {
+    await ideStore.createNode("root", "file", "untitled.ts");
     onStartCoding();
   };
 
@@ -58,9 +60,9 @@ export function HomePage({
   };
 
   const onClone = async () => {
-    const repoUrl = window.prompt("Paste Git repo URL to clone (backend must support /clone):");
+    const repoUrl = window.prompt("Paste Git repo URL to clone:");
     if (!repoUrl) return;
-    const ok = await ideStore.cloneRepo(repoUrl);
+    const ok = await ideStore.cloneRepo(repoUrl, currentWorkspace);
     if (ok) onStartCoding();
   };
 
@@ -69,20 +71,16 @@ export function HomePage({
     if (ok) onStartCoding();
   };
 
-  // ✅ Instant search state
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // Compute results instantly while typing
   const results = useMemo(() => {
     const query = q.trim();
     if (!query) return [] as DocSearchResult[];
-    // This calls the store method you added earlier (docs + local matches)
     return ideStore.searchDocumentation(query) as DocSearchResult[];
   }, [q]);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       if (!wrapRef.current) return;
@@ -105,8 +103,6 @@ export function HomePage({
       setOpen(false);
       return;
     }
-
-    // local file result
     ideStore.openFile(r.nodeId);
     onStartCoding();
     setOpen(false);
@@ -124,7 +120,6 @@ export function HomePage({
     <div className="homeWrap">
       <div className="homeTitle">CARDANO IDE</div>
 
-      {/* ✅ Wrap so dropdown can position relative */}
       <div ref={wrapRef} className="homeSearchWrap">
         <div className="homeSearch">
           <input
@@ -134,7 +129,7 @@ export function HomePage({
             onChange={(e) => {
               const v = e.target.value;
               setQ(v);
-              setOpen(!!v.trim()); // open as you type
+              setOpen(!!v.trim());
             }}
             onFocus={() => {
               if (q.trim()) setOpen(true);
@@ -146,7 +141,6 @@ export function HomePage({
           </button>
         </div>
 
-        {/* ✅ Instant results dropdown */}
         {open && q.trim() && (
           <div className="docDropdown" role="listbox">
             {results.length === 0 ? (
@@ -203,26 +197,24 @@ export function HomePage({
       <div className="homeSection">
         <div className="homeSectionTitle">Recent Workspaces</div>
         <div className="homeLinks">
-          <a
-            className="homeLink"
-            href="#"
-            onClick={(e) => {
-              e.preventDefault();
-              ideStore.toast("Workspace switching is a stub (wire to backend workspacesList).");
-            }}
-          >
-            Basic - 1
-          </a>
-          <a
-            className="homeLink"
-            href="#"
-            onClick={(e) => {
-              e.preventDefault();
-              ideStore.toast("Workspace switching is a stub (wire to backend workspacesList).");
-            }}
-          >
-            default_workspace
-          </a>
+          {workspaces.length === 0 ? (
+            <span className="empty">No workspaces</span>
+          ) : (
+            workspaces.slice(0, 8).map((w) => (
+              <a
+                key={w}
+                className="homeLink"
+                href="#"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  await ideStore.switchWorkspace(w);
+                  onStartCoding();
+                }}
+              >
+                {w}
+              </a>
+            ))
+          )}
         </div>
       </div>
 

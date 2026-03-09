@@ -8,9 +8,6 @@ import { ideStore, useIDEStore } from "./state/store";
 import { MonacoEditor } from "./ui/MonacoEditor";
 import { LanguageMode } from "./types";
 
-/**
- * Prevent the entire IDE from going blank if CommandPalette has a runtime loop.
- */
 class PaletteErrorBoundary extends React.Component<
   { onError?: (err: unknown) => void; children: React.ReactNode },
   { hasError: boolean }
@@ -35,7 +32,6 @@ function registerDefaultCommands() {
   const once = (id: string, title: string, handler: () => void, keybinding?: string) =>
     ideStore.registerCommand({ id, title, handler, keybinding });
 
-  // UI/IDE commands (Cardano-focused, not EVM-specific).
   once("file.new", "File: New File", () => ideStore.createNode("root", "file", "untitled.ts"), "Ctrl/Cmd+N");
   once("file.newFolder", "File: New Folder", () => ideStore.createNode("root", "folder", "folder"));
   once("file.rename", "File: Rename", () => ideStore.toast("Use rename icon in explorer"));
@@ -77,6 +73,7 @@ function registerDefaultCommands() {
 
 function Icon({ name }: { name: string }) {
   const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none" as const };
+
   switch (name) {
     case "home":
       return (
@@ -84,12 +81,7 @@ function Icon({ name }: { name: string }) {
           <path d="M3 11 12 3l9 8v10H3V11Z" stroke="currentColor" strokeWidth="2" />
         </svg>
       );
-    case "play":
-      return (
-        <svg {...common}>
-          <path d="M8 5v14l12-7-12-7Z" fill="currentColor" />
-        </svg>
-      );
+
     case "compile":
       return (
         <svg {...common}>
@@ -97,6 +89,7 @@ function Icon({ name }: { name: string }) {
           <path d="M4 4h16v16H4V4Z" stroke="currentColor" strokeWidth="2" />
         </svg>
       );
+
     case "terminal":
       return (
         <svg {...common}>
@@ -105,6 +98,94 @@ function Icon({ name }: { name: string }) {
           <path d="M11 14h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>
       );
+
+    case "wallet":
+      return (
+        <svg {...common}>
+          <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18a2 2 0 0 1 2 2v2h-5a2.5 2.5 0 0 0 0 5H20v3a2 2 0 0 1-2 2H6.5A2.5 2.5 0 0 1 4 16.5v-9Z" stroke="currentColor" strokeWidth="2" />
+          <path d="M20 10h-5a1.5 1.5 0 0 0 0 3h5v-3Z" stroke="currentColor" strokeWidth="2" />
+          <circle cx="15.5" cy="11.5" r="0.8" fill="currentColor" />
+        </svg>
+      );
+
+    case "settings":
+      return (
+        <svg {...common}>
+          <path
+            d="M12 3.5 13.8 5l2.3-.4 1 2.1 2.2.9-.4 2.3L20.5 12 19 13.8l.4 2.3-2.1 1-1 2.2-2.3-.4L12 20.5 10.2 19l-2.3.4-1-2.1-2.2-1 .4-2.3L3.5 12 5 10.2l-.4-2.3 2.1-1 1-2.2 2.3.4L12 3.5Z"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinejoin="round"
+          />
+          <circle cx="12" cy="12" r="2.8" stroke="currentColor" strokeWidth="1.8" />
+        </svg>
+      );
+
+    case "theme":
+      return (
+        <svg {...common}>
+          <path d="M20 14.5A7.5 7.5 0 1 1 9.5 4 6 6 0 0 0 20 14.5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+        </svg>
+      );
+
+    case "palette":
+      return (
+        <svg {...common}>
+          <rect x="3" y="5" width="18" height="14" rx="3" stroke="currentColor" strokeWidth="2" />
+          <path d="M7 10h2M11 10h2M15 10h2M7 14h5M14 14h3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
+
+    case "explorer":
+      return (
+        <svg {...common}>
+          <path
+            d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"
+            stroke="currentColor"
+            strokeWidth="2"
+          />
+        </svg>
+      );
+
+    case "search":
+      return (
+        <svg {...common}>
+          <path d="M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" stroke="currentColor" strokeWidth="2" />
+          <path d="M16.5 16.5 21 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
+
+    case "source":
+      return (
+        <svg {...common}>
+          <circle cx="6" cy="6" r="2.2" stroke="currentColor" strokeWidth="2" />
+          <circle cx="18" cy="6" r="2.2" stroke="currentColor" strokeWidth="2" />
+          <circle cx="12" cy="18" r="2.2" stroke="currentColor" strokeWidth="2" />
+          <path d="M8 7.3 10.5 9.5M16 7.3 13.5 9.5M12 15.8v-4.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
+
+    case "tests":
+      return (
+        <svg {...common}>
+          <path d="M9 3h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M10 3v4l-4.8 8.2A3 3 0 0 0 7.8 20h8.4a3 3 0 0 0 2.6-4.8L14 7V3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M9 14h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
+
+    case "extensions":
+      return (
+        <svg {...common}>
+          <path
+            d="M12 3.5 15 6.5 13.3 8.2 15.8 10.7 17.5 9l3 3-3 3-1.7-1.7-2.5 2.5 1.7 1.7-3 3-3-3 1.7-1.7-2.5-2.5L6.5 15l-3-3 3-3 1.7 1.7 2.5-2.5L9 6.5l3-3Z"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinejoin="round"
+          />
+        </svg>
+      );
+
     default:
       return (
         <svg {...common}>
@@ -114,6 +195,14 @@ function Icon({ name }: { name: string }) {
   }
 }
 
+const ACTIVITY_ITEMS = [
+  { id: "explorer", icon: "explorer", title: "Explorer" },
+  { id: "search", icon: "search", title: "Search" },
+  { id: "source", icon: "source", title: "Source Control" },
+  { id: "tests", icon: "tests", title: "Tests" },
+  { id: "extensions", icon: "extensions", title: "Extensions" },
+] as const;
+
 export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -121,18 +210,22 @@ export default function App() {
   const [gotoOpen, setGotoOpen] = useState(false);
   const [gotoLine, setGotoLine] = useState<number | null>(null);
   const [search, setSearch] = useState("");
-
-  // ✅ Home should be the first screen
   const [activeView, setActiveView] = useState<"home" | "editor">("home");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // 🔒 prevents the "activeTabId restored => jump to editor" on initial load
   const bootRef = useRef(false);
+  const settingsRef = useRef<HTMLDivElement | null>(null);
 
   const state = useIDEStore((s) => s);
+  const workspaces = useIDEStore((s) => s.workspaces);
+  const currentWorkspace = useIDEStore((s) => s.currentWorkspace);
   const activeTab = state.openTabs.find((t) => t.id === state.activeTabId) ?? null;
   const activeNode = activeTab ? state.nodes[activeTab.nodeId] : null;
 
-  useEffect(() => registerDefaultCommands(), []);
+  useEffect(() => {
+    registerDefaultCommands();
+    ideStore.initWorkspaceSystem();
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -167,7 +260,6 @@ export default function App() {
         setGotoOpen(true);
       }
       if (meta && e.key.toLowerCase() === "j") {
-        // Optional: terminal toggle hotkey (Ctrl/Cmd+J)
         e.preventDefault();
         ideStore.executeCommand("view.toggleTerminal");
       }
@@ -177,7 +269,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // ✅ Only auto-switch to editor AFTER the app has booted once.
   useEffect(() => {
     if (!bootRef.current) {
       bootRef.current = true;
@@ -186,13 +277,22 @@ export default function App() {
     if (state.activeTabId) setActiveView("editor");
   }, [state.activeTabId]);
 
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (!settingsRef.current) return;
+      if (!settingsRef.current.contains(e.target as Node)) {
+        setSettingsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
   const searchResults = useMemo(() => (search ? ideStore.searchInFiles(search) : []), [search, state.nodes]);
 
   const quickItems = useMemo(
-    () =>
-      Object.values(state.nodes).filter(
-        (n) => n.type === "file" && n.name.toLowerCase().includes(quickQ.toLowerCase())
-      ),
+    () => Object.values(state.nodes).filter((n) => n.type === "file" && n.name.toLowerCase().includes(quickQ.toLowerCase())),
     [quickQ, state.nodes]
   );
 
@@ -204,17 +304,26 @@ export default function App() {
       : "split-none";
 
   const onCompile = () => {
-    ideStore.toast("Compile triggered (wire to your Plutus compile action/command).");
+    ideStore.toast(`Compile triggered for ${currentWorkspace} (wire compiler action).`);
   };
 
-  const onRun = () => {
-    ideStore.toast("Run triggered (wire to run/test action).");
+  const handlePlutusStarter = async () => {
+    const nodeId = await ideStore.createTemplateFile("plutus-starter");
+    if (nodeId) setActiveView("editor");
   };
 
-  const toggleTerminal = () => ideStore.executeCommand("view.toggleTerminal");
+  const handleMintingPolicy = async () => {
+    const nodeId = await ideStore.createTemplateFile("minting-policy");
+    if (nodeId) setActiveView("editor");
+  };
+
+  const handleValidatorScript = async () => {
+    const nodeId = await ideStore.createTemplateFile("validator-script");
+    if (nodeId) setActiveView("editor");
+  };
 
   return (
-    <div className={`app ${state.theme}`}>
+    <div className={`app ${state.theme} ${state.layout.showBottomPanel ? "terminal-open" : "terminal-hidden"}`}>
       <input
         id="workspace-import"
         type="file"
@@ -230,36 +339,34 @@ export default function App() {
         <div className="brand">Cardano IDE</div>
 
         <div className="topbarMid">
-          <button className="topIconBtn" title="Home" onClick={() => setActiveView("home")}>
+          <button
+            className="topIconBtn"
+            title="Home"
+            onClick={() => {
+              setActiveView("home");
+            }}
+          >
             <Icon name="home" />
             <span>Home</span>
           </button>
         </div>
 
-        <select className="workspaceSelectTop">
-          <option>default_workspace</option>
-          <option>plutus_lab</option>
+        <select
+          className="workspaceSelectTop"
+          value={currentWorkspace}
+          onChange={(e) => ideStore.switchWorkspace(e.target.value)}
+        >
+          {workspaces.map((w) => (
+            <option key={w} value={w}>
+              {w}
+            </option>
+          ))}
         </select>
 
         <div className="topbarActions">
-          <button className="btnGhost" onClick={onRun} title="Run">
-            <Icon name="play" /> Run
-          </button>
-          <button className="btnGhost" onClick={onCompile} title="Compile">
-            <Icon name="compile" /> Compile
-          </button>
-
-          {/* ✅ Terminal toggle in topbar */}
-          <button className="btnGhost" onClick={toggleTerminal} title="Toggle Terminal (Ctrl/Cmd+J)">
-            <Icon name="terminal" /> {state.layout.showBottomPanel ? "Hide Terminal" : "Show Terminal"}
-          </button>
-
-          <button className="btnGhost">Connect Wallet (CIP-30)</button>
-          <button className="btnGhost" onClick={() => ideStore.executeCommand("view.toggleTheme")}>
-            Theme
-          </button>
-          <button className="btnGhost" onClick={() => setPaletteOpen(true)}>
-            Command Palette
+          <button className="btnGhost walletBtn" title="Connect Wallet (CIP-30)">
+            <Icon name="wallet" />
+            <span>Connect Wallet</span>
           </button>
 
           <button className="btnPrimary" onClick={onCompile}>
@@ -270,16 +377,60 @@ export default function App() {
 
       <div className="workspace">
         <aside className="activityBar">
-          {(["explorer", "search", "source", "tests", "extensions"] as const).map((a) => (
+          <div className="activityBarMain">
+            {ACTIVITY_ITEMS.map((a) => (
+              <button
+                key={a.id}
+                className={state.activity === a.id ? "active activityBtn" : "activityBtn"}
+                onClick={() => ideStore.setActivity(a.id)}
+                title={a.title}
+                aria-label={a.title}
+              >
+                <Icon name={a.icon} />
+              </button>
+            ))}
+          </div>
+
+          <div className="activityBarBottom" ref={settingsRef}>
             <button
-              key={a}
-              className={state.activity === a ? "active" : ""}
-              onClick={() => ideStore.setActivity(a)}
-              title={a}
+              className={settingsOpen ? "activityBtn settingsBtn active" : "activityBtn settingsBtn"}
+              onClick={() => setSettingsOpen((v) => !v)}
+              title="Settings"
+              aria-label="Settings"
             >
-              {a[0].toUpperCase()}
+              <Icon name="settings" />
             </button>
-          ))}
+
+            {settingsOpen && (
+              <div className="settingsMenu">
+                <button
+                  className="settingsMenuItem"
+                  onClick={() => {
+                    ideStore.executeCommand("view.toggleTheme");
+                    setSettingsOpen(false);
+                  }}
+                >
+                  <span className="settingsMenuIcon">
+                    <Icon name="theme" />
+                  </span>
+                  <span>Theme</span>
+                </button>
+
+                <button
+                  className="settingsMenuItem"
+                  onClick={() => {
+                    setPaletteOpen(true);
+                    setSettingsOpen(false);
+                  }}
+                >
+                  <span className="settingsMenuIcon">
+                    <Icon name="palette" />
+                  </span>
+                  <span>Command Palette</span>
+                </button>
+              </div>
+            )}
+          </div>
         </aside>
 
         {state.layout.showSidePanel && (
@@ -323,60 +474,52 @@ export default function App() {
         )}
 
         <main className={`main ${splitClass}`}>
-          {activeView === "home" ? (
-            <div className="mainStage">
-              <HomePage
-                onStartCoding={() => setActiveView("editor")}
-                onPlutusStarter={() => {
-                  setActiveView("editor");
-                  ideStore.toast("Plutus Starter: choose a template (wire to scaffold).");
-                }}
-                onMintingPolicy={() => {
-                  setActiveView("editor");
-                  ideStore.toast("Minting Policy: choose a template (wire to scaffold).");
-                }}
-                onValidatorScript={() => {
-                  setActiveView("editor");
-                  ideStore.toast("Validator Script: choose a template (wire to scaffold).");
-                }}
-              />
-            </div>
-          ) : (
-            <>
-              <div className="editorPane">
-                <EditorTabs splitId="primary" />
-                <div className="breadcrumbs">{activeTab?.path ?? "No file selected"}</div>
-
-                {activeNode ? (
-                  <MonacoEditor
-                    value={activeNode.content ?? ""}
-                    language={activeNode.language ?? "plaintext"}
-                    theme={state.theme}
-                    onCursor={(line, column) => ideStore.setCursor(line, column)}
-                    gotoLine={gotoLine}
-                    onChange={(v) => activeTab && ideStore.updateContent(activeTab.id, v)}
-                  />
-                ) : (
-                  <div className="empty">Open a file from Explorer or Quick Open (Ctrl/Cmd+P).</div>
-                )}
+          <div className={"stageShell" + (activeView === "home" ? " isHome" : " isEditor")}>
+            {activeView === "home" ? (
+              <div className="mainStage homeStage">
+                <HomePage
+                  onStartCoding={() => setActiveView("editor")}
+                  onPlutusStarter={handlePlutusStarter}
+                  onMintingPolicy={handleMintingPolicy}
+                  onValidatorScript={handleValidatorScript}
+                />
               </div>
-
-              {state.layout.splitOrientation !== "none" && (
-                <div className="editorPane secondary">
+            ) : (
+              <>
+                <div className="editorPane">
                   <EditorTabs splitId="primary" />
-                  <div className="empty">
-                    Secondary split view (mirrored active tab).{" "}
-                    <button onClick={() => ideStore.setSplitOrientation("none")}>Close split</button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
+                  <div className="breadcrumbs">{activeTab?.path ?? "No file selected"}</div>
 
-          {/* ✅ When terminal is hidden, keep a small bar so user can bring it back easily */}
+                  {activeNode ? (
+                    <MonacoEditor
+                      value={activeNode.content ?? ""}
+                      language={activeNode.language ?? "plaintext"}
+                      theme={state.theme}
+                      onCursor={(line, column) => ideStore.setCursor(line, column)}
+                      gotoLine={gotoLine}
+                      onChange={(v) => activeTab && ideStore.updateContent(activeTab.id, v)}
+                    />
+                  ) : (
+                    <div className="empty">Open a file from Explorer or Quick Open (Ctrl/Cmd+P).</div>
+                  )}
+                </div>
+
+                {state.layout.splitOrientation !== "none" && (
+                  <div className="editorPane secondary">
+                    <EditorTabs splitId="primary" />
+                    <div className="empty">
+                      Secondary split view (mirrored active tab).{" "}
+                      <button onClick={() => ideStore.setSplitOrientation("none")}>Close split</button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
           {!state.layout.showBottomPanel && (
             <div className="bottomCollapsed">
-              <button className="bottomCollapsedBtn" onClick={toggleTerminal}>
+              <button className="bottomCollapsedBtn" onClick={() => ideStore.executeCommand("view.toggleTerminal")}>
                 <Icon name="terminal" /> Show Terminal
               </button>
             </div>

@@ -1,0 +1,17 @@
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+
+# Prevent direct access to dApp static shell; force auth gate.
+RewriteRule ^main\.html$ /launch.php [R=302,L]
+
+# Clean root to marketing landing page.
+RewriteRule ^$ /index.html [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+Header always set X-Frame-Options "SAMEORIGIN"
+Header always set X-Content-Type-Options "nosniff"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

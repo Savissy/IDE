@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ideStore, useIDEStore, toPath } from "../../state/store.ts";
 import {
   IconFile,
@@ -10,17 +10,80 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconDoc,
+  IconWorkspaceMenu,
+  IconCheck,
+  IconPlus,
+  IconBackup,
+  IconRestore,
+  IconTrash,
+  IconEdit,
+  IconDownload,
+  IconClone,
 } from "./ExplorerIcons";
+
+type WorkspaceMenuAction =
+  | "create"
+  | "backup"
+  | "restore"
+  | "delete"
+  | "rename"
+  | "download"
+  | "deleteAll"
+  | "clone";
+
+type WorkspaceMenuItem = {
+  key: WorkspaceMenuAction;
+  label: string;
+  icon: React.ReactNode;
+};
+
+const WORKSPACE_MENU_ITEMS: WorkspaceMenuItem[] = [
+  { key: "create", label: "Create", icon: <IconPlus size={15} /> },
+  { key: "backup", label: "Backup", icon: <IconBackup size={15} /> },
+  { key: "restore", label: "Restore", icon: <IconRestore size={15} /> },
+  { key: "delete", label: "Delete", icon: <IconTrash size={15} /> },
+  { key: "rename", label: "Rename", icon: <IconEdit size={15} /> },
+  { key: "download", label: "Download", icon: <IconDownload size={15} /> },
+  { key: "deleteAll", label: "Delete All", icon: <IconTrash size={15} /> },
+  { key: "clone", label: "Clone", icon: <IconClone size={15} /> },
+];
 
 export function ExplorerTree() {
   const nodes = useIDEStore((s) => s.nodes);
   const rootId = useIDEStore((s) => s.rootId);
+  const currentWorkspace = useIDEStore((s) => s.currentWorkspace);
+  const workspaces = useIDEStore((s) => s.workspaces);
 
-  // Expanded folders
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ [rootId]: true });
-
-  // Track selection (folder OR file)
   const [selectedId, setSelectedId] = useState<string>(rootId);
+  const [workspaceQuery, setWorkspaceQuery] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
+  const [activeMenuItem, setActiveMenuItem] = useState<WorkspaceMenuAction | null>(null);
+
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const wsDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    ideStore.initWorkspaceSystem();
+  }, []);
+
+  useEffect(() => {
+    setExpanded({ [rootId]: true });
+    setSelectedId(rootId);
+    setWorkspaceQuery("");
+    setWorkspaceDropdownOpen(false);
+  }, [currentWorkspace, rootId]);
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (menuRef.current && !menuRef.current.contains(target)) setMenuOpen(false);
+      if (wsDropdownRef.current && !wsDropdownRef.current.contains(target)) setWorkspaceDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
 
   function resolveTargetFolderId(): string {
     const sel = nodes[selectedId];
@@ -37,8 +100,7 @@ export function ExplorerTree() {
     if (!nameOrPath) return;
 
     const simpleName = nameOrPath.includes("/") ? nameOrPath.split("/").pop()! : nameOrPath;
-
-    ideStore.createNode(parentId, "file", simpleName);
+    await ideStore.createNode(parentId, "file", simpleName);
     setExpanded((x) => ({ ...x, [parentId]: true }));
   }
 
@@ -50,26 +112,21 @@ export function ExplorerTree() {
     if (!nameOrPath) return;
 
     const simpleName = nameOrPath.includes("/") ? nameOrPath.split("/").pop()! : nameOrPath;
-
-    const newId = ideStore.createNode(parentId, "folder", simpleName) as any;
-
-    setExpanded((x) => ({ ...x, [parentId]: true, ...(typeof newId === "string" ? { [newId]: true } : {}) }));
-    if (typeof newId === "string") setSelectedId(newId);
+    await ideStore.createNode(parentId, "folder", simpleName);
+    setExpanded((x) => ({ ...x, [parentId]: true }));
   }
 
-  // ---- Toolbar actions (safe stubs + existing working features)
   const onOpenFile = async () => {
     const ok = await ideStore.openFromFilePicker?.();
     if (!ok) ideStore.toast("Open canceled or failed.");
   };
 
   const onUploadFolder = async () => {
-    // Prefer the existing local filesystem connect (it imports a whole folder)
-    const ok = await ideStore.connectLocalFilesystem?.();
+    const ok = await ideStore.openFolderFromPicker?.();
     if (!ok) ideStore.toast("Folder import canceled or not supported.");
   };
 
-    const onImportIPFS = async () => {
+  const onImportIPFS = async () => {
     const cidOrPath = window.prompt("Paste IPFS CID or ipfs://CID/path:");
     if (!cidOrPath) return;
     await ideStore.importFromIpfs(cidOrPath);
@@ -80,6 +137,63 @@ export function ExplorerTree() {
     if (!url) return;
     await ideStore.importFromHttp(url);
   };
+
+  const filteredWorkspaces = useMemo(() => {
+    const q = workspaceQuery.trim().toLowerCase();
+    if (!q) return workspaces;
+    return workspaces.filter((w) => w.toLowerCase().includes(q));
+  }, [workspaceQuery, workspaces]);
+
+  async function handleWorkspaceAction(action: WorkspaceMenuAction) {
+    setActiveMenuItem(action);
+
+    try {
+      if (action === "create") {
+        const name = window.prompt("New workspace name:");
+        if (name) await ideStore.createWorkspaceAndSwitch(name);
+      }
+
+      if (action === "backup") {
+        await ideStore.backupCurrentWorkspace();
+      }
+
+      if (action === "restore") {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "application/json,.json";
+        input.onchange = async () => {
+          const f = input.files?.[0];
+          if (f) await ideStore.restoreCurrentWorkspaceFromFile(f);
+        };
+        input.click();
+      }
+
+      if (action === "delete") {
+        await ideStore.deleteCurrentWorkspace();
+      }
+
+      if (action === "rename") {
+        const name = window.prompt("Rename workspace:", currentWorkspace);
+        if (name) await ideStore.renameCurrentWorkspace(name);
+      }
+
+      if (action === "download") {
+        await ideStore.downloadCurrentWorkspace();
+      }
+
+      if (action === "deleteAll") {
+        await ideStore.deleteAllCurrentWorkspace();
+      }
+
+      if (action === "clone") {
+        const repoUrl = window.prompt("Paste Git repo URL to clone into this workspace:");
+        if (repoUrl) await ideStore.cloneRepo(repoUrl, currentWorkspace);
+      }
+    } finally {
+      setMenuOpen(false);
+      window.setTimeout(() => setActiveMenuItem(null), 180);
+    }
+  }
 
   const renderNode = (id: string) => {
     const node = nodes[id];
@@ -113,7 +227,6 @@ export function ExplorerTree() {
           className={"treeRow" + (isSelected ? " selected" : "")}
           onClick={() => {
             setSelectedId(id);
-
             if (isFolder) {
               setExpanded((x) => ({ ...x, [id]: !x[id] }));
             } else {
@@ -175,17 +288,46 @@ export function ExplorerTree() {
   };
 
   const recents = useIDEStore((s) => s.recentFiles);
-  const recentItems = useMemo(() => recents.map((id) => ({ id, path: toPath(id, nodes) })).filter((x) => !!x.path), [nodes, recents]);
+  const recentItems = useMemo(
+    () => recents.map((id) => ({ id, path: toPath(id, nodes) })).filter((x) => !!x.path),
+    [nodes, recents]
+  );
 
   const targetFolderId = resolveTargetFolderId();
   const targetFolderPath = toPath(targetFolderId, nodes) || "root";
 
   return (
     <div className="rxExplorer">
-      {/* Header area like Remix */}
       <div className="rxExplorerHeader">
         <div className="rxExplorerTitleRow">
-          <div className="rxExplorerTitle">FILE EXPLORER</div>
+          <div className="rxWorkspaceHeaderLeft" ref={menuRef}>
+            <button
+              className={"rxWorkspaceMenuBtn" + (menuOpen ? " open" : "")}
+              title="Workspace actions"
+              onClick={() => setMenuOpen((v) => !v)}
+            >
+              <IconWorkspaceMenu size={15} />
+            </button>
+
+            <div className="rxExplorerTitle">WORKSPACE</div>
+
+            {menuOpen && (
+              <div className="rxWorkspaceMenuDropdown">
+                {WORKSPACE_MENU_ITEMS.map((item) => (
+                  <button
+                    key={item.key}
+                    className={"rxWorkspaceMenuItem" + (activeMenuItem === item.key ? " active" : "")}
+                    onMouseEnter={() => setActiveMenuItem(item.key)}
+                    onClick={() => handleWorkspaceAction(item.key)}
+                  >
+                    <span className="rxWorkspaceMenuIcon">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button
             className="rxGitSignIn"
             onClick={() => ideStore.toast("GitHub Sign-in is a stub (wire OAuth later).")}
@@ -195,19 +337,54 @@ export function ExplorerTree() {
           </button>
         </div>
 
-        <div className="rxWorkspaceBlock">
-          <div className="rxWorkspaceLabel">WORKSPACES</div>
+        <div className="rxWorkspaceBlock" ref={wsDropdownRef}>
+          <div className="rxWorkspacePicker">
+            <input
+              className="homeSearchInput"
+              placeholder="Search / switch workspace"
+              value={workspaceQuery}
+              onFocus={() => setWorkspaceDropdownOpen(true)}
+              onChange={(e) => {
+                setWorkspaceQuery(e.target.value);
+                setWorkspaceDropdownOpen(true);
+              }}
+            />
 
-          <div className="rxWorkspaceRow">
-            <div className="rxWorkspaceSelect">
-              <span className="rxWorkspaceName">default_workspace</span>
-              <span className="rxWorkspaceCaret" aria-hidden>
-                <IconChevronDown size={16} />
-              </span>
-            </div>
+            <button
+              className="rxWorkspacePickerCaret"
+              onClick={() => setWorkspaceDropdownOpen((v) => !v)}
+              title="Show workspaces"
+            >
+              <IconChevronDown size={16} />
+            </button>
+
+            {workspaceDropdownOpen && (
+              <div className="rxWorkspaceOptions">
+                {filteredWorkspaces.length === 0 ? (
+                  <div className="rxWorkspaceOptionEmpty">No workspaces found</div>
+                ) : (
+                  filteredWorkspaces.map((w) => {
+                    const isCurrent = w === currentWorkspace;
+                    return (
+                      <button
+                        key={w}
+                        className={"rxWorkspaceOption" + (isCurrent ? " current" : "")}
+                        onClick={async () => {
+                          await ideStore.switchWorkspace(w);
+                          setWorkspaceQuery("");
+                          setWorkspaceDropdownOpen(false);
+                        }}
+                      >
+                        <span className="rxWorkspaceOptionCheck">{isCurrent ? <IconCheck size={14} /> : <span style={{ width: 14 }} />}</span>
+                        <span className="rxWorkspaceOptionText">{w}</span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Remix-like 6 icon toolbar (HORIZONTAL) */}
           <div className="rxIconRow">
             <button className="rxIconBtn" title={`New file (inside: ${targetFolderPath})`} onClick={createNewFile}>
               <IconFile size={16} />
@@ -218,23 +395,21 @@ export function ExplorerTree() {
             <button className="rxIconBtn" title="Open file from filesystem" onClick={onOpenFile}>
               <IconUploadFile size={16} />
             </button>
-            <button className="rxIconBtn" title="Upload folder / connect folder" onClick={onUploadFolder}>
+            <button className="rxIconBtn" title="Upload folder" onClick={onUploadFolder}>
               <IconUploadFolder size={16} />
             </button>
-            <button className="rxIconBtn" title="Import from IPFS (stub)" onClick={onImportIPFS}>
+            <button className="rxIconBtn" title="Import from IPFS" onClick={onImportIPFS}>
               <IconIPFS size={16} />
             </button>
-            <button className="rxIconBtn" title="Import from HTTPS (stub)" onClick={onImportHTTP}>
+            <button className="rxIconBtn" title="Import from HTTPS" onClick={onImportHTTP}>
               <IconHTTP size={16} />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Tree */}
       <div className="rxTreeWrap">{renderNode(rootId)}</div>
 
-      {/* Recent Files (keep existing feature) */}
       <div className="recentList">
         <h4>Recent Files</h4>
         {recentItems.length === 0 ? (

@@ -13,41 +13,35 @@ import {
 import { importFilesIntoWorkspace, setFileAtPath, type ImportedFile } from "../workspace/importers.ts";
 import { parseGistId, fetchGistFiles } from "../workspace/gist.ts";
 import { connectDirectoryPicker, readDirectoryAsFiles } from "../workspace/localFs.ts";
-import { wsClone } from "../core/api.ts";
-import type { DocItem } from "../docs/catalog.ts";
-import { searchCatalog } from "../docs/search.ts";
+import {
+  wsClone,
+  workspacesList,
+  workspacesCreate,
+  workspacesRename,
+  workspacesDelete,
+  workspacesDeleteAll,
+  workspacesBackup,
+  workspacesRestore,
+  workspacesDownload,
+  wsTree,
+  wsRead,
+  wsWrite,
+  wsMkdir,
+  wsTouch,
+  wsDelete,
+  wsRename,
+} from "../core/api.ts";
 import { searchDocs } from "../docs/searchDocs.ts";
 import { importFromHttpUrl } from "../workspace/httpImport.ts";
 import { pickFolderAsFiles } from "../workspace/folderPicker.ts";
 import { importFromIpfsRef } from "../workspace/ipfsImport.ts";
+import {
+  templateContent,
+  templateFileName,
+  type CardanoTemplateKind,
+} from "../templates/cardanoTemplates.ts";
 
 const STORAGE_KEY = "cardano.ide.workspace.v1";
-
-function makePersistableState(state: any) {
-  // Persist everything EXCEPT big file contents.
-  // Keep node structure, but blank out content for files.
-  const nodes = Object.fromEntries(
-    Object.entries(state.nodes).map(([id, n]: any) => {
-      if (n?.type === "file") {
-        return [id, { ...n, content: "" }]; // keep name, type, parentId, etc.
-      }
-      return [id, n];
-    })
-  );
-
-  // Also don't persist noisy logs that can grow forever.
-  return {
-    ...state,
-    nodes,
-    terminalLines: state.terminalLines?.slice(-200) ?? [],
-    outputLines: state.outputLines?.slice(-400) ?? [],
-    diagnostics: state.diagnostics ?? [],
-    toasts: [],
-
-    // editor view state stays as you already force home-first at loadState anyway
-    // (so this is safe even if you keep it)
-  };
-}
 
 type Toast = { id: string; message: string; kind: "info" | "error" };
 
@@ -57,6 +51,13 @@ type Layout = {
   showSidePanel: boolean;
   showBottomPanel: boolean;
   splitOrientation: "none" | "vertical" | "horizontal";
+};
+
+type WorkspaceTreeItem = {
+  type: "dir" | "file";
+  name: string;
+  path: string;
+  children?: WorkspaceTreeItem[];
 };
 
 type State = {
@@ -82,7 +83,27 @@ type State = {
   splits: EditorSplit[];
   toasts: Toast[];
   commands: Record<string, Command>;
+  currentWorkspace: string;
+  workspaces: string[];
 };
+
+function makePersistableState(state: State) {
+  const nodes = Object.fromEntries(
+    Object.entries(state.nodes).map(([id, n]) => {
+      if (n?.type === "file") return [id, { ...n, content: "" }];
+      return [id, n];
+    })
+  );
+
+  return {
+    ...state,
+    nodes,
+    terminalLines: state.terminalLines.slice(-200),
+    outputLines: state.outputLines.slice(-400),
+    diagnostics: state.diagnostics,
+    toasts: [],
+  };
+}
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
@@ -97,42 +118,42 @@ function pathOf(id: string, nodes: Record<string, WorkspaceNode>): string {
 }
 
 function detectLanguage(name: string): LanguageMode {
-  if (name.endsWith(".ts") || name.endsWith(".tsx")) return "typescript";
-  if (name.endsWith(".js") || name.endsWith(".jsx")) return "javascript";
-  if (name.endsWith(".json")) return "json";
-  if (name.endsWith(".md")) return "markdown";
+  const lower = name.toLowerCase();
+
+  if (lower.endsWith(".ts") || lower.endsWith(".tsx")) return "typescript";
+  if (lower.endsWith(".js") || lower.endsWith(".jsx")) return "javascript";
+  if (lower.endsWith(".json")) return "json";
+  if (lower.endsWith(".md")) return "markdown";
+
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html" as LanguageMode;
+  if (lower.endsWith(".css")) return "css" as LanguageMode;
+  if (lower.endsWith(".php")) return "php" as LanguageMode;
+  if (lower.endsWith(".hs")) return "haskell" as LanguageMode;
+  if (lower.endsWith(".cbor")) return "plaintext";
+  if (lower.endsWith(".xml")) return "xml" as LanguageMode;
+  if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "yaml" as LanguageMode;
+  if (lower.endsWith(".sql")) return "sql" as LanguageMode;
+
   return "plaintext";
+}
+
+function createEmptyNodes(workspaceName = "default_workspace"): Record<string, WorkspaceNode> {
+  const rootId = "root";
+  return {
+    [rootId]: {
+      id: rootId,
+      name: workspaceName,
+      type: "folder",
+      parentId: null,
+      childrenIds: [],
+    },
+  };
 }
 
 function createInitialState(): State {
   const rootId = "root";
-  const srcId = "src";
-  const readmeId = "readme";
-  const mainId = "main";
-
-  const nodes: Record<string, WorkspaceNode> = {
-    [rootId]: { id: rootId, name: "workspace", type: "folder", parentId: null, childrenIds: [srcId, readmeId] },
-    [srcId]: { id: srcId, name: "src", type: "folder", parentId: rootId, childrenIds: [mainId] },
-    [readmeId]: {
-      id: readmeId,
-      name: "README.md",
-      type: "file",
-      parentId: rootId,
-      content: "# Cardano IDE\n",
-      language: "markdown",
-    },
-    [mainId]: {
-      id: mainId,
-      name: "Main.ts",
-      type: "file",
-      parentId: srcId,
-      content: "export const hello = 'Cardano';\n",
-      language: "typescript",
-    },
-  };
-
   return {
-    nodes,
+    nodes: createEmptyNodes("default_workspace"),
     rootId,
     openTabs: [],
     activeTabId: null,
@@ -144,7 +165,7 @@ function createInitialState(): State {
     layout: { sideWidth: 280, bottomHeight: 190, showSidePanel: true, showBottomPanel: true, splitOrientation: "none" },
     theme: "dark",
     settings: { tabSize: 2, lineEnding: "LF", insertSpaces: true },
-    diagnostics: [{ id: uid(), nodeId: mainId, message: "Unused binding: hello", severity: "warning", line: 1, column: 14 }],
+    diagnostics: [],
     outputLines: ["[output] Cardano IDE initialized"],
     terminalLines: ["cardano@ide:$ welcome"],
     terminalInput: "",
@@ -154,6 +175,8 @@ function createInitialState(): State {
     splits: [{ id: "primary", tabIds: [], activeTabId: null }],
     toasts: [],
     commands: {},
+    currentWorkspace: "default_workspace",
+    workspaces: ["default_workspace"],
   };
 }
 
@@ -161,158 +184,337 @@ function loadState(): State {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return createInitialState();
-
     const persisted = JSON.parse(raw) as Partial<State>;
     const base = createInitialState();
-
     const merged: State = { ...base, ...persisted } as State;
-
-    // ✅ HOME-FIRST: do NOT restore editor tabs
     return {
       ...merged,
       openTabs: [],
       activeTabId: null,
-      splits:
-        merged.splits?.map((sp) => ({ ...sp, tabIds: [], activeTabId: null })) ?? [{ id: "primary", tabIds: [], activeTabId: null }],
+      splits: merged.splits?.map((sp) => ({ ...sp, tabIds: [], activeTabId: null })) ?? [
+        { id: "primary", tabIds: [], activeTabId: null },
+      ],
     };
   } catch {
     return createInitialState();
   }
 }
 
+function nodeIdFor(type: "dir" | "file", path: string) {
+  return `${type}:${path}`;
+}
+
+function buildNodesFromTree(items: WorkspaceTreeItem[], workspaceName: string): Record<string, WorkspaceNode> {
+  const rootId = "root";
+  const nodes: Record<string, WorkspaceNode> = {
+    [rootId]: {
+      id: rootId,
+      name: workspaceName,
+      type: "folder",
+      parentId: null,
+      childrenIds: [],
+    },
+  };
+
+  function addItem(item: WorkspaceTreeItem, parentId: string) {
+    const isFolder = item.type === "dir";
+    const id = nodeIdFor(item.type, item.path);
+    nodes[id] = {
+      id,
+      name: item.name,
+      type: isFolder ? "folder" : "file",
+      parentId,
+      childrenIds: isFolder ? [] : undefined,
+      content: isFolder ? undefined : "",
+      language: isFolder ? undefined : detectLanguage(item.name),
+    };
+    nodes[parentId].childrenIds = [...(nodes[parentId].childrenIds ?? []), id];
+
+    if (isFolder) {
+      for (const child of item.children ?? []) addItem(child, id);
+    }
+  }
+
+  for (const item of items) addItem(item, rootId);
+  return nodes;
+}
+
 class IDEStore {
   private state: State = loadState();
   private listeners = new Set<() => void>();
+  private bootstrapped = false;
+  private loadingFileIds = new Set<string>();
 
   subscribe = (cb: () => void) => {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
   };
 
-  searchDocumentation(query: string) {
-  const docs = searchDocs(query).map((d) => ({
-    kind: "doc",
-    item: d
-  }));
-
-  const local = this.searchInFiles(query).map((m) => ({
-    kind: "local",
-    nodeId: m.nodeId,
-    title: m.path,
-    path: m.path,
-    preview: m.preview
-  }));
-
-  return [...docs, ...local];
-}
-
-openDocumentationUrl(url: string) {
-  window.open(url, "_blank");
-}
-
-  //   // ---------------------------------------------------------------------------
-  // // ✅ Documentation search (catalog + local workspace)
-  // // ---------------------------------------------------------------------------
-
-  // searchDocumentation(query: string): Array<
-  //   | { kind: "doc"; item: DocItem }
-  //   | { kind: "local"; title: string; path: string; nodeId: string; preview: string }
-  // > {
-  //   const q = (query ?? "").trim();
-  //   if (!q) return [];
-
-  //   // 1) Cardano docs catalog search
-  //   const docs = searchCatalog(q).map((item) => ({ kind: "doc" as const, item }));
-
-  //   // 2) Local workspace search (Markdown + any file contents)
-  //   const localMatches = this.searchInFiles(q)
-  //     .slice(0, 25)
-  //     .map((m) => {
-  //       const node = this.state.nodes[m.nodeId];
-  //       return {
-  //         kind: "local" as const,
-  //         title: node?.name ?? m.path,
-  //         path: m.path,
-  //         nodeId: m.nodeId,
-  //         preview: m.preview,
-  //       };
-  //     });
-
-  //   return [...docs, ...localMatches].slice(0, 30);
-  // }
-
-  // openDocumentationUrl(url: string) {
-  //   window.open(url, "_blank", "noopener,noreferrer");
-  // }
-
   getState = () => this.state;
 
   private setState = (updater: (s: State) => State) => {
-  this.state = updater(this.state);
-
-  // Persist safely (avoid quota exceeded)
-  try {
-    const persistable = makePersistableState(this.state);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(persistable));
-  } catch (e) {
-    // If storage quota is exceeded, don't crash the app.
-    console.warn("[persist] Failed to save workspace (quota). Keeping in-memory state only.", e);
-
-    // Optional: auto-trim logs further and try once more
+    this.state = updater(this.state);
     try {
-      const trimmed = makePersistableState({
-        ...this.state,
-        terminalLines: this.state.terminalLines.slice(-50),
-        outputLines: this.state.outputLines.slice(-100),
-      });
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
-    } catch (e2) {
-      console.warn("[persist] Still cannot persist after trimming.", e2);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(makePersistableState(this.state)));
+    } catch (e) {
+      console.warn("[persist] Failed to save workspace", e);
     }
+    this.listeners.forEach((l) => l());
+  };
 
-    // Optional: tell the user once
-    // (avoid spamming toasts in loops)
-    if (!(this.state as any).__quotaWarned) {
-      (this.state as any).__quotaWarned = true;
-      this.toast("Workspace too large to save in browser storage. Data kept in memory.", "error");
+  async initWorkspaceSystem() {
+    if (this.bootstrapped) return;
+    this.bootstrapped = true;
+
+    try {
+      const res = await workspacesList();
+      let items = res.items ?? [];
+      if (!items.length) {
+        await workspacesCreate("default_workspace");
+        items = ["default_workspace"];
+      }
+
+      const current = items.includes(this.state.currentWorkspace) ? this.state.currentWorkspace : items[0];
+
+      this.setState((s) => ({
+        ...s,
+        workspaces: items,
+        currentWorkspace: current,
+      }));
+
+      await this.switchWorkspace(current);
+    } catch (e) {
+      console.error(e);
+      this.toast("Failed to initialize workspaces", "error");
     }
   }
-
-  this.listeners.forEach((l) => l());
-};
 
   toast(message: string, kind: "info" | "error" = "info") {
     const id = uid();
     this.setState((s) => ({ ...s, toasts: [...s.toasts, { id, message, kind }] }));
     window.setTimeout(() => this.dismissToast(id), 2400);
   }
+
   dismissToast(id: string) {
     this.setState((s) => ({ ...s, toasts: s.toasts.filter((t) => t.id !== id) }));
+  }
+
+  searchDocumentation(query: string) {
+    const docs = searchDocs(query).map((d) => ({ kind: "doc", item: d }));
+    const local = this.searchInFiles(query).map((m) => ({
+      kind: "local",
+      nodeId: m.nodeId,
+      title: m.path,
+      path: m.path,
+      preview: m.preview,
+    }));
+    return [...docs, ...local];
+  }
+
+  openDocumentationUrl(url: string) {
+    window.open(url, "_blank");
   }
 
   setTheme(theme: "dark" | "light") {
     this.setState((s) => ({ ...s, theme }));
   }
+
   toggleTheme() {
     this.setTheme(this.state.theme === "dark" ? "light" : "dark");
   }
+
   setActivity(activity: ActivityView) {
     this.setState((s) => ({ ...s, activity }));
   }
+
   setBottomView(bottomView: BottomView) {
     this.setState((s) => ({ ...s, bottomView }));
   }
+
   toggleBottomPanel() {
     this.setState((s) => ({ ...s, layout: { ...s.layout, showBottomPanel: !s.layout.showBottomPanel } }));
   }
+
   toggleSidePanel() {
     this.setState((s) => ({ ...s, layout: { ...s.layout, showSidePanel: !s.layout.showSidePanel } }));
   }
+
   resizeSidePanel(sideWidth: number) {
     this.setState((s) => ({ ...s, layout: { ...s.layout, sideWidth: Math.max(200, Math.min(520, sideWidth)) } }));
   }
+
   resizeBottomPanel(bottomHeight: number) {
-    this.setState((s) => ({ ...s, layout: { ...s.layout, bottomHeight: Math.max(120, Math.min(420, bottomHeight)) } }));
+    this.setState((s) => ({
+      ...s,
+      layout: { ...s.layout, bottomHeight: Math.max(120, Math.min(420, bottomHeight)) },
+    }));
+  }
+
+  async refreshWorkspaces() {
+    const res = await workspacesList();
+    const items = res.items ?? [];
+    this.setState((s) => ({
+      ...s,
+      workspaces: items,
+      currentWorkspace: items.includes(s.currentWorkspace) ? s.currentWorkspace : items[0] ?? "default_workspace",
+    }));
+  }
+
+  async switchWorkspace(name: string) {
+    try {
+      const res = await wsTree(name, "");
+      const nodes = buildNodesFromTree((res.items ?? []) as WorkspaceTreeItem[], name);
+
+      this.setState((s) => ({
+        ...s,
+        nodes,
+        currentWorkspace: name,
+        openTabs: [],
+        activeTabId: null,
+        dirty: {},
+        closedTabStack: [],
+        splits: s.splits.map((sp) => ({ ...sp, tabIds: [], activeTabId: null })),
+        recentFiles: [],
+        outputLines: [...s.outputLines, `[workspace] switched to ${name}`].slice(-400),
+      }));
+    } catch (e) {
+      console.error(e);
+      this.toast(`Failed to switch workspace: ${name}`, "error");
+    }
+  }
+
+  async createWorkspaceAndSwitch(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+    try {
+      const res = await workspacesCreate(trimmed);
+      if (!res.ok) {
+        this.toast("Failed to create workspace", "error");
+        return false;
+      }
+      await this.refreshWorkspaces();
+      await this.switchWorkspace(trimmed);
+      this.toast(`Workspace created: ${trimmed}`);
+      return true;
+    } catch (e) {
+      console.error(e);
+      this.toast("Failed to create workspace", "error");
+      return false;
+    }
+  }
+
+  async renameCurrentWorkspace(newName: string) {
+    const oldName = this.state.currentWorkspace;
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === oldName) return false;
+    try {
+      const res = await workspacesRename(oldName, trimmed);
+      if (!res.ok) {
+        this.toast("Rename failed", "error");
+        return false;
+      }
+      await this.refreshWorkspaces();
+      await this.switchWorkspace(trimmed);
+      this.toast(`Workspace renamed to ${trimmed}`);
+      return true;
+    } catch (e) {
+      console.error(e);
+      this.toast("Rename failed", "error");
+      return false;
+    }
+  }
+
+  async deleteCurrentWorkspace() {
+    const name = this.state.currentWorkspace;
+    if (!window.confirm(`Delete workspace "${name}"?`)) return false;
+    try {
+      const res = await workspacesDelete(name);
+      if (!res.ok) {
+        this.toast("Delete failed", "error");
+        return false;
+      }
+      await this.refreshWorkspaces();
+      const next = this.state.workspaces.find((w) => w !== name) ?? "default_workspace";
+      if (!this.state.workspaces.length) {
+        await workspacesCreate("default_workspace");
+        await this.refreshWorkspaces();
+      }
+      await this.switchWorkspace(next);
+      this.toast(`Deleted workspace: ${name}`);
+      return true;
+    } catch (e) {
+      console.error(e);
+      this.toast("Delete failed", "error");
+      return false;
+    }
+  }
+
+  async deleteAllCurrentWorkspace() {
+    const name = this.state.currentWorkspace;
+    if (!window.confirm(`Delete all files in "${name}"?`)) return false;
+    try {
+      const res = await workspacesDeleteAll(name);
+      if (!res.ok) {
+        this.toast("Delete all failed", "error");
+        return false;
+      }
+      await this.switchWorkspace(name);
+      this.toast(`Cleared workspace: ${name}`);
+      return true;
+    } catch (e) {
+      console.error(e);
+      this.toast("Delete all failed", "error");
+      return false;
+    }
+  }
+
+  async backupCurrentWorkspace() {
+    try {
+      const blob = await workspacesBackup(this.state.currentWorkspace);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${this.state.currentWorkspace}.backup.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      this.toast("Workspace backup downloaded");
+    } catch (e) {
+      console.error(e);
+      this.toast("Backup failed", "error");
+    }
+  }
+
+  async downloadCurrentWorkspace() {
+    try {
+      const blob = await workspacesDownload(this.state.currentWorkspace);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${this.state.currentWorkspace}.workspace.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      this.toast("Workspace downloaded");
+    } catch (e) {
+      console.error(e);
+      this.toast("Download failed", "error");
+    }
+  }
+
+  async restoreCurrentWorkspaceFromFile(file: File) {
+    try {
+      const res = await workspacesRestore(this.state.currentWorkspace, file);
+      if (!res.ok) {
+        this.toast(res.error || "Restore failed", "error");
+        return false;
+      }
+      await this.switchWorkspace(this.state.currentWorkspace);
+      this.toast("Workspace restored");
+      return true;
+    } catch (e) {
+      console.error(e);
+      this.toast("Restore failed", "error");
+      return false;
+    }
   }
 
   openFile(nodeId: string, splitId = "primary") {
@@ -331,8 +533,58 @@ openDocumentationUrl(url: string) {
           ? { ...sp, tabIds: sp.tabIds.includes(tab.id) ? sp.tabIds : [...sp.tabIds, tab.id], activeTabId: tab.id }
           : sp
       );
-      return { ...s, openTabs, activeTabId: tab.id, recentFiles, splits, activeLanguage: node.language ?? detectLanguage(node.name) };
+
+      return {
+        ...s,
+        openTabs,
+        activeTabId: tab.id,
+        recentFiles,
+        splits,
+        activeLanguage: node.language ?? detectLanguage(node.name),
+      };
     });
+
+    const currentNode = this.state.nodes[nodeId];
+    const currentPath = pathOf(nodeId, this.state.nodes);
+
+    if (
+      currentNode &&
+      currentNode.type === "file" &&
+      (currentNode.content ?? "") === "" &&
+      currentPath &&
+      !this.loadingFileIds.has(nodeId)
+    ) {
+      this.loadingFileIds.add(nodeId);
+
+      wsRead(this.state.currentWorkspace, currentPath)
+        .then((r) => {
+          const content = typeof r?.content === "string" ? r.content : "";
+
+          this.setState((s) => {
+            const target = s.nodes[nodeId];
+            if (!target || target.type !== "file") return s;
+
+            return {
+              ...s,
+              nodes: {
+                ...s.nodes,
+                [nodeId]: {
+                  ...target,
+                  content,
+                  language: target.language ?? detectLanguage(target.name),
+                },
+              },
+            };
+          });
+        })
+        .catch((e) => {
+          console.error(e);
+          this.toast(`Failed to read ${currentPath}`, "error");
+        })
+        .finally(() => {
+          this.loadingFileIds.delete(nodeId);
+        });
+    }
   }
 
   closeTab(tabId: string) {
@@ -371,20 +623,32 @@ openDocumentationUrl(url: string) {
     }));
   }
 
-  saveFile(tabId: string) {
+  async saveFile(tabId: string) {
     const tab = this.state.openTabs.find((t) => t.id === tabId);
     if (!tab) return;
-
-    this.setState((s) => {
-      const dirty = { ...s.dirty };
-      delete dirty[tab.nodeId];
-      return { ...s, dirty, outputLines: [...s.outputLines, `[save] ${tab.path}`] };
-    });
-    this.toast("File saved");
+    const node = this.state.nodes[tab.nodeId];
+    const content = node?.content ?? "";
+    try {
+      await wsWrite(this.state.currentWorkspace, tab.path, content);
+      this.setState((s) => {
+        const dirty = { ...s.dirty };
+        delete dirty[tab.nodeId];
+        return { ...s, dirty, outputLines: [...s.outputLines, `[save] ${tab.path}`].slice(-400) };
+      });
+      this.toast("File saved");
+    } catch (e) {
+      console.error(e);
+      this.toast("Save failed", "error");
+    }
   }
 
-  saveAll() {
-    this.setState((s) => ({ ...s, dirty: {}, outputLines: [...s.outputLines, `[save-all] ${Object.keys(s.dirty).length} files`] }));
+  async saveAll() {
+    const tabs = [...this.state.openTabs];
+    for (const tab of tabs) {
+      if (this.state.dirty[this.state.nodes[tab.nodeId]?.id ?? ""]) {
+        await this.saveFile(tab.id);
+      }
+    }
     this.toast("All files saved");
   }
 
@@ -395,63 +659,140 @@ openDocumentationUrl(url: string) {
   setLanguage(tabId: string, language: LanguageMode) {
     const tab = this.state.openTabs.find((t) => t.id === tabId);
     if (!tab) return;
-    this.setState((s) => ({ ...s, nodes: { ...s.nodes, [tab.nodeId]: { ...s.nodes[tab.nodeId], language } }, activeLanguage: language }));
+    this.setState((s) => ({
+      ...s,
+      nodes: { ...s.nodes, [tab.nodeId]: { ...s.nodes[tab.nodeId], language } },
+      activeLanguage: language,
+    }));
   }
 
-  createNode(parentId: string, type: "file" | "folder", name: string) {
-    const id = uid();
-    this.setState((s) => {
-      const parent = s.nodes[parentId];
-      if (!parent || parent.type !== "folder") return s;
+  async createNode(parentId: string, type: "file" | "folder", name: string) {
+    const parent = this.state.nodes[parentId];
+    if (!parent || parent.type !== "folder") return;
 
-      const node: WorkspaceNode = {
-        id,
-        name,
-        type,
-        parentId,
-        childrenIds: type === "folder" ? [] : undefined,
-        content: type === "file" ? "" : undefined,
-        language: type === "file" ? detectLanguage(name) : undefined,
-      };
+    const parentPath = pathOf(parentId, this.state.nodes);
+    const fullPath = parentPath ? `${parentPath}/${name}` : name;
 
-      return {
+    try {
+      if (type === "folder") await wsMkdir(this.state.currentWorkspace, fullPath);
+      else await wsTouch(this.state.currentWorkspace, fullPath);
+
+      await this.switchWorkspace(this.state.currentWorkspace);
+      this.toast(`${type} created`);
+
+      if (type === "file") {
+        const newId = nodeIdFor("file", fullPath);
+        this.openFile(newId);
+      }
+    } catch (e) {
+      console.error(e);
+      this.toast(`${type} creation failed`, "error");
+    }
+  }
+
+  private async uniquePathForFile(baseName: string, parentId = "root"): Promise<string> {
+    const parentPath = pathOf(parentId, this.state.nodes);
+    const dot = baseName.lastIndexOf(".");
+    const stem = dot > 0 ? baseName.slice(0, dot) : baseName;
+    const ext = dot > 0 ? baseName.slice(dot) : "";
+
+    let candidate = baseName;
+    let counter = 2;
+
+    const existingPaths = new Set(
+      Object.values(this.state.nodes)
+        .filter((n) => n.type === "file")
+        .map((n) => pathOf(n.id, this.state.nodes))
+    );
+
+    let fullPath = parentPath ? `${parentPath}/${candidate}` : candidate;
+
+    while (existingPaths.has(fullPath)) {
+      candidate = `${stem}-${counter}${ext}`;
+      fullPath = parentPath ? `${parentPath}/${candidate}` : candidate;
+      counter += 1;
+    }
+
+    return fullPath;
+  }
+
+  async createTemplateFile(kind: CardanoTemplateKind): Promise<string | null> {
+    try {
+      const workspace = this.state.currentWorkspace || "default_workspace";
+      const parentId = "root";
+      const fileName = templateFileName(kind);
+      const content = templateContent(kind);
+      const fullPath = await this.uniquePathForFile(fileName, parentId);
+
+      await wsWrite(workspace, fullPath, content);
+      await this.switchWorkspace(workspace);
+
+      const newId = nodeIdFor("file", fullPath);
+
+      this.setState((s) => ({
         ...s,
-        nodes: { ...s.nodes, [id]: node, [parentId]: { ...parent, childrenIds: [...(parent.childrenIds ?? []), id] } },
-      };
-    });
+        nodes: {
+          ...s.nodes,
+          [newId]: s.nodes[newId]
+            ? {
+                ...s.nodes[newId],
+                content,
+                language: detectLanguage(fileName),
+              }
+            : {
+                id: newId,
+                name: fileName,
+                type: "file",
+                parentId: "root",
+                content,
+                language: detectLanguage(fileName),
+              },
+        },
+      }));
 
-    this.toast(`${type} created`);
-    if (type === "file") this.openFile(id);
+      this.openFile(newId);
+      this.toast(`${fileName} created in ${workspace}`);
+      return newId;
+    } catch (e) {
+      console.error(e);
+      this.toast("Failed to create template file", "error");
+      return null;
+    }
   }
 
-  renameNode(id: string, name: string) {
-    this.setState((s) => ({ ...s, nodes: { ...s.nodes, [id]: { ...s.nodes[id], name } } }));
+  async renameNode(id: string, name: string) {
+    const node = this.state.nodes[id];
+    if (!node || !node.parentId) return;
+
+    const oldPath = pathOf(id, this.state.nodes);
+    const parentPath = pathOf(node.parentId, this.state.nodes);
+    const newPath = parentPath ? `${parentPath}/${name}` : name;
+
+    try {
+      await wsRename(this.state.currentWorkspace, oldPath, newPath);
+      await this.switchWorkspace(this.state.currentWorkspace);
+    } catch (e) {
+      console.error(e);
+      this.toast("Rename failed", "error");
+    }
   }
 
-  deleteNode(id: string) {
-    const ok = window.confirm("Delete item? This cannot be undone.");
-    if (!ok) return;
+  async deleteNode(id: string) {
+    const node = this.state.nodes[id];
+    if (!node || !node.parentId) return;
+    if (!window.confirm("Delete item? This cannot be undone.")) return;
 
-    this.setState((s) => {
-      const node = s.nodes[id];
-      if (!node || !node.parentId) return s;
-
-      const nodes = { ...s.nodes };
-      const remove = (n: string) => {
-        const cur = nodes[n];
-        if (!cur) return;
-        (cur.childrenIds ?? []).forEach(remove);
-        delete nodes[n];
-      };
-      remove(id);
-
-      const parent = nodes[node.parentId];
-      if (parent) parent.childrenIds = (parent.childrenIds ?? []).filter((cid) => cid !== id);
-
-      const openTabs = s.openTabs.filter((t) => t.nodeId !== id);
-
-      return { ...s, nodes, openTabs };
-    });
+    try {
+      await wsDelete(this.state.currentWorkspace, pathOf(id, this.state.nodes));
+      this.setState((s) => ({
+        ...s,
+        openTabs: s.openTabs.filter((t) => t.nodeId !== id),
+      }));
+      await this.switchWorkspace(this.state.currentWorkspace);
+    } catch (e) {
+      console.error(e);
+      this.toast("Delete failed", "error");
+    }
   }
 
   duplicateNode(id: string) {
@@ -460,24 +801,22 @@ openDocumentationUrl(url: string) {
     this.createNode(node.parentId, node.type, `${node.name}.copy`);
   }
 
-  moveNode(id: string, parentId: string) {
-    this.setState((s) => {
-      const node = s.nodes[id];
-      const parent = s.nodes[parentId];
-      if (!node || !node.parentId || !parent || parent.type !== "folder") return s;
+  async moveNode(id: string, parentId: string) {
+    const node = this.state.nodes[id];
+    const parent = this.state.nodes[parentId];
+    if (!node || !node.parentId || !parent || parent.type !== "folder") return;
 
-      const oldParent = s.nodes[node.parentId];
+    const oldPath = pathOf(id, this.state.nodes);
+    const newParentPath = pathOf(parentId, this.state.nodes);
+    const newPath = newParentPath ? `${newParentPath}/${node.name}` : node.name;
 
-      return {
-        ...s,
-        nodes: {
-          ...s.nodes,
-          [id]: { ...node, parentId },
-          [oldParent.id]: { ...oldParent, childrenIds: (oldParent.childrenIds ?? []).filter((c) => c !== id) },
-          [parentId]: { ...parent, childrenIds: [...(parent.childrenIds ?? []), id] },
-        },
-      };
-    });
+    try {
+      await wsRename(this.state.currentWorkspace, oldPath, newPath);
+      await this.switchWorkspace(this.state.currentWorkspace);
+    } catch (e) {
+      console.error(e);
+      this.toast("Move failed", "error");
+    }
   }
 
   setSplitOrientation(splitOrientation: Layout["splitOrientation"]) {
@@ -522,46 +861,25 @@ openDocumentationUrl(url: string) {
   }
 
   exportWorkspace() {
-    const blob = new Blob([JSON.stringify(this.state, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "cardano-workspace.json";
-    a.click();
-    this.toast("Workspace exported");
+    this.downloadCurrentWorkspace();
   }
 
   importWorkspace(file: File) {
-    file
-      .text()
-      .then((text) => {
-        const imported = JSON.parse(text);
-        this.setState((_) => ({ ...createInitialState(), ...imported }));
-        this.toast("Workspace imported");
-      })
-      .catch(() => this.toast("Import failed", "error"));
+    this.restoreCurrentWorkspaceFromFile(file);
   }
 
   resetWorkspace() {
-    if (!window.confirm("Reset workspace to defaults?")) return;
-    this.setState(() => createInitialState());
+    this.deleteAllCurrentWorkspace();
   }
 
-  // ---------------------------------------------------------------------------
-  // ✅ NEW SAFE HELPERS (do not break existing UI)
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Add/update files into current in-memory workspace tree.
-   * This touches ONLY nodes tree; it doesn't break editor tabs.
-   */
-  private applyImportedFiles(files: ImportedFile[], rootFolderName = "imports") {
-    this.setState((s) => {
-      const nextNodes = importFilesIntoWorkspace(s.nodes, s.rootId, files, rootFolderName);
-      return { ...s, nodes: nextNodes, outputLines: [...s.outputLines, `[import] ${files.length} file(s)`] };
-    });
+  private async persistImportedFiles(files: ImportedFile[], rootFolderName = "imports") {
+    for (const f of files) {
+      const remotePath = `${rootFolderName}/${f.path}`.replace(/^\/+/, "");
+      await wsWrite(this.state.currentWorkspace, remotePath, f.content);
+    }
+    await this.switchWorkspace(this.state.currentWorkspace);
   }
 
-  /** Open local files via browser file picker (works everywhere) */
   async openFromFilePicker(): Promise<boolean> {
     try {
       const input = document.createElement("input");
@@ -577,12 +895,9 @@ openDocumentationUrl(url: string) {
       if (!files.length) return false;
 
       const imported: ImportedFile[] = [];
-      for (const f of files) {
-        const content = await f.text();
-        imported.push({ path: f.name, content });
-      }
+      for (const f of files) imported.push({ path: f.name, content: await f.text() });
 
-      this.applyImportedFiles(imported, "opened");
+      await this.persistImportedFiles(imported, "opened");
       this.toast(`Opened ${files.length} file(s)`);
       return true;
     } catch (e) {
@@ -592,12 +907,11 @@ openDocumentationUrl(url: string) {
     }
   }
 
-    /** Upload Folder (browser picker). Does not break anything if unsupported. */
   async openFolderFromPicker(): Promise<boolean> {
     try {
       const files = await pickFolderAsFiles();
       if (!files.length) return false;
-      this.applyImportedFiles(files, "folder-upload");
+      await this.persistImportedFiles(files, "folder-upload");
       this.toast(`Uploaded folder (${files.length} file(s))`);
       return true;
     } catch (e) {
@@ -607,7 +921,6 @@ openDocumentationUrl(url: string) {
     }
   }
 
-  /** Import a single file from HTTPS url (raw text). */
   async importFromHttp(url: string): Promise<boolean> {
     try {
       const files = await importFromHttpUrl(url);
@@ -615,7 +928,7 @@ openDocumentationUrl(url: string) {
         this.toast("No importable content from URL", "error");
         return false;
       }
-      this.applyImportedFiles(files, "https-import");
+      await this.persistImportedFiles(files, "https-import");
       this.toast("Imported from URL");
       return true;
     } catch (e) {
@@ -625,7 +938,6 @@ openDocumentationUrl(url: string) {
     }
   }
 
-  /** Import from IPFS (CID or ipfs://...). Uses public gateway by default. */
   async importFromIpfs(cidOrUrl: string): Promise<boolean> {
     try {
       const files = await importFromIpfsRef(cidOrUrl);
@@ -633,7 +945,7 @@ openDocumentationUrl(url: string) {
         this.toast("IPFS import returned no files", "error");
         return false;
       }
-      this.applyImportedFiles(files, "ipfs-import");
+      await this.persistImportedFiles(files, "ipfs-import");
       this.toast(`Imported from IPFS (${files.length} file(s))`);
       return true;
     } catch (e) {
@@ -643,23 +955,16 @@ openDocumentationUrl(url: string) {
     }
   }
 
-  /**
-   * Connect to Local Filesystem (Remix-style).
-   * Uses File System Access API if supported.
-   * If not supported, it won't crash; it will toast.
-   */
   async connectLocalFilesystem(): Promise<boolean> {
     try {
       const dir = await connectDirectoryPicker();
       if (!dir) return false;
-
       const files = await readDirectoryAsFiles(dir);
       if (!files.length) {
         this.toast("No files found in selected directory");
         return false;
       }
-
-      this.applyImportedFiles(files, dir.name || "local");
+      await this.persistImportedFiles(files, dir.name || "local");
       this.toast(`Connected: ${dir.name} (${files.length} file(s))`);
       return true;
     } catch (e) {
@@ -669,7 +974,6 @@ openDocumentationUrl(url: string) {
     }
   }
 
-  /** Import from GitHub Gist (client-side via GitHub API) */
   async importFromGist(gistIdOrUrl: string): Promise<boolean> {
     try {
       const id = parseGistId(gistIdOrUrl);
@@ -678,27 +982,24 @@ openDocumentationUrl(url: string) {
         return false;
       }
 
-  const tokenKey = "cardano.ide.github.token";
-    let token = localStorage.getItem(tokenKey) ?? undefined;
+      const tokenKey = "cardano.ide.github.token";
+      let token = localStorage.getItem(tokenKey) ?? undefined;
 
-    // If rate-limited or user wants private gist, let them paste a token once
-    if (!token) {
-      const maybe = window.prompt(
-        "Optional: paste a GitHub token to avoid rate limits (leave blank to continue without):"
-      );
-      if (maybe && maybe.trim()) {
-        token = maybe.trim();
-        localStorage.setItem(tokenKey, token);
+      if (!token) {
+        const maybe = window.prompt("Optional: paste a GitHub token to avoid rate limits (leave blank to continue without):");
+        if (maybe && maybe.trim()) {
+          token = maybe.trim();
+          localStorage.setItem(tokenKey, token);
+        }
       }
-    }
 
-const files = await fetchGistFiles(id, token);
+      const files = await fetchGistFiles(id, token);
       if (!files.length) {
         this.toast("Gist had no importable files", "error");
         return false;
       }
 
-      this.applyImportedFiles(files, `gist-${id.slice(0, 6)}`);
+      await this.persistImportedFiles(files, `gist-${id.slice(0, 6)}`);
       this.toast(`Imported gist (${files.length} file(s))`);
       return true;
     } catch (e) {
@@ -708,29 +1009,15 @@ const files = await fetchGistFiles(id, token);
     }
   }
 
-  /**
-   * Clone (Remix-style).
-   * This expects your backend to implement /api/workspace/{project}/clone.
-   * If backend doesn't support it, we toast and keep UI stable.
-   */
-  async cloneRepo(repoUrl: string, project = "default_workspace"): Promise<boolean> {
+  async cloneRepo(repoUrl: string, project = this.state.currentWorkspace): Promise<boolean> {
     try {
       const res = await wsClone(project, repoUrl);
-
       if (!res.ok) {
         this.toast(res.error || "Clone failed", "error");
         return false;
       }
-
-      // Convert backend files -> ImportedFile list
-      const imported: ImportedFile[] = (res.files ?? []).map((f) => ({ path: f.path, content: f.content }));
-      if (!imported.length) {
-        this.toast("Clone returned no files", "error");
-        return false;
-      }
-
-      this.applyImportedFiles(imported, "cloned");
-      this.toast(`Cloned (${imported.length} file(s))`);
+      await this.switchWorkspace(project);
+      this.toast(`Cloned into ${project}`);
       return true;
     } catch (e) {
       console.error(e);
@@ -739,10 +1026,6 @@ const files = await fetchGistFiles(id, token);
     }
   }
 
-  /**
-   * Optional helper: create/update a file at a path without breaking existing nodes structure.
-   * Example: setFileAtPath("src/Example.ts", "...").
-   */
   setFileAtPath(path: string, content: string) {
     this.setState((s) => {
       const nextNodes = setFileAtPath(s.nodes, s.rootId, path, content, detectLanguage);
@@ -757,4 +1040,4 @@ export function useIDEStore<T>(selector: (state: State) => T) {
   return useSyncExternalStore(ideStore.subscribe, () => selector(ideStore.getState()), () => selector(ideStore.getState()));
 }
 
-export const toPath = pathOf;
+export const toPath = pathOf; 

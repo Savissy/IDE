@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>P2P Lending dApp</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="card">
+    <h1>💰 P2P Lending Protocol</h1>
+
+    <button id="connect">🔌 Connect Wallet</button>
+
+    <h2>Open Loan</h2>
+    <input id="lender" placeholder="Lender Address" />
+    <input id="collateral" placeholder="Collateral (ADA)" />
+    <input id="principal" placeholder="Borrow Amount (ADA)" />
+    <input id="interest" placeholder="Interest (ADA)" />
+    <div class="field">
+  <!--<label>Loan-to-Value (LTV)</label> -->
+  <div class="readonly">
+    <span>Ltv 60%</span>
+    <small>Fixed by protocol</small>
+  </div>
+</div>
+
+    <button id="openLoan">Open Loan</button>
+
+    <h2>Repay</h2>
+    <button id="repayLoan">Repay Loan</button>
+
+    <!--<p id="log"></p>-->
+    <div id="log" class="log-box"></div>
+  </div>
+  
+
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
