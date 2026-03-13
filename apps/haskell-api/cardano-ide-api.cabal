@@ -10,8 +10,10 @@ executable cardano-ide-api
   ghc-options:      -O2 -threaded -rtsopts -with-rtsopts=-N
 
   other-modules:
-      Jobs
+      Database
+    , Jobs
     , SafePath
+    , Schema
     , Types
     , Workspace
     , WorkspaceImport

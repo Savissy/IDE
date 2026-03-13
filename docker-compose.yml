@@ -2,6 +2,17 @@ services:
   redis:
     image: redis:7-alpine
     ports: ["6379:6379"]
+    volumes:
+      - redis-data:/data
+
+  redis-ui:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
 
   haskell-api:
     build: ./apps/haskell-api
@@ -35,3 +46,6 @@ services:
       - NODE_OPTIONS=--dns-result-order=ipv4first
     command: sh -lc "npm i -g pnpm@9 && pnpm i && pnpm -C apps/shell-frontend dev --host 0.0.0.0"
     depends_on: [haskell-api]
+
+volumes:
+  redis-data:

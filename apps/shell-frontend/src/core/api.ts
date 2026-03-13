@@ -69,6 +69,33 @@ export async function workspacesRestore(project: string, file: File) {
   return safeJson(r) as Promise<{ ok: boolean; error?: string }>;
 }
 
+export async function fetchWorkspaceMeta(project: string) {
+  const r = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(project)}/meta`);
+  return safeJson(r) as Promise<{
+    wmWorkspace: string;
+    wmCreatedAt: string;
+    wmUpdatedAt: string;
+    wmFileWrites: number;
+    wmBuildCount: number;
+    wmLastBuildStatus: string | null;
+    wmLastBuildAt: string | null;
+  }>;
+}
+
+export async function fetchWorkspaceBuilds(project: string) {
+  const r = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(project)}/builds`);
+  return safeJson(r) as Promise<{
+    items: Array<{
+      brJobId: string;
+      brWorkspace: string;
+      brSelectedPath: string;
+      brStartedAt: string;
+      brFinishedAt: string | null;
+      brOk: boolean | null;
+    }>;
+  }>;
+}
+
 export async function wsTree(project: string, path: string) {
   const r = await fetch(`${API_BASE}/api/workspace/${encodeURIComponent(project)}/tree?path=${encodeURIComponent(path)}`);
   return safeJson(r) as Promise<{ items: any[] }>;
@@ -139,8 +166,12 @@ export async function wsWrite(project: string, path: string, content: string) {
   return safeJson(r) as Promise<{ ok: boolean }>;
 }
 
-export async function startCompile(project: string) {
-  const r = await fetch(`${API_BASE}/api/build/${encodeURIComponent(project)}/start`, { method: "POST" });
+export async function startCompile(project: string, path: string) {
+  const r = await fetch(`${API_BASE}/api/build/${encodeURIComponent(project)}/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ path }),
+  });
   return safeJson(r) as Promise<{ jobId: string }>;
 }
 

@@ -5,6 +5,7 @@ module Types where
 
 import Data.Aeson
 import Data.Text (Text)
+import Data.Time.Clock (UTCTime)
 import GHC.Generics (Generic)
 
 data OkResp = OkResp
@@ -70,3 +71,34 @@ instance ToJSON WorkspaceBackup where
 instance FromJSON WorkspaceBackup where
   parseJSON = withObject "WorkspaceBackup" $ \o ->
     WorkspaceBackup <$> o .: "workspace" <*> o .: "files"
+
+data WorkspaceMeta = WorkspaceMeta
+  { wmWorkspace       :: Text
+  , wmCreatedAt       :: UTCTime
+  , wmUpdatedAt       :: UTCTime
+  , wmFileWrites      :: Integer
+  , wmBuildCount      :: Integer
+  , wmLastBuildStatus :: Maybe Text
+  , wmLastBuildAt     :: Maybe UTCTime
+  } deriving (Show, Generic)
+
+instance ToJSON WorkspaceMeta where
+  toJSON = genericToJSON defaultOptions
+
+instance FromJSON WorkspaceMeta where
+  parseJSON = genericParseJSON defaultOptions
+
+data BuildRecord = BuildRecord
+  { brJobId        :: Text
+  , brWorkspace    :: Text
+  , brSelectedPath :: Text
+  , brStartedAt    :: UTCTime
+  , brFinishedAt   :: Maybe UTCTime
+  , brOk           :: Maybe Bool
+  } deriving (Show, Generic)
+
+instance ToJSON BuildRecord where
+  toJSON = genericToJSON defaultOptions
+
+instance FromJSON BuildRecord where
+  parseJSON = genericParseJSON defaultOptions

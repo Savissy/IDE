@@ -32,8 +32,19 @@ function registerDefaultCommands() {
   const once = (id: string, title: string, handler: () => void, keybinding?: string) =>
     ideStore.registerCommand({ id, title, handler, keybinding });
 
-  once("file.new", "File: New File", () => ideStore.createNode("root", "file", "untitled.ts"), "Ctrl/Cmd+N");
-  once("file.newFolder", "File: New Folder", () => ideStore.createNode("root", "folder", "folder"));
+  once(
+    "file.new",
+    "File: New File",
+    () => {
+      void ideStore.createNode("root", "file", "untitled.ts");
+    },
+    "Ctrl/Cmd+N"
+  );
+
+  once("file.newFolder", "File: New Folder", () => {
+    void ideStore.createNode("root", "folder", "folder");
+  });
+
   once("file.rename", "File: Rename", () => ideStore.toast("Use rename icon in explorer"));
   once("file.delete", "File: Delete", () => ideStore.toast("Use delete icon in explorer"));
 
@@ -42,13 +53,22 @@ function registerDefaultCommands() {
     "File: Save",
     () => {
       const active = ideStore.getState().activeTabId;
-      if (active) ideStore.saveFile(active);
+      if (active) void ideStore.saveFile(active);
     },
     "Ctrl/Cmd+S"
   );
-  once("file.saveAll", "File: Save All", () => ideStore.saveAll(), "Ctrl/Cmd+Alt+S");
+
+  once(
+    "file.saveAll",
+    "File: Save All",
+    () => {
+      void ideStore.saveAll();
+    },
+    "Ctrl/Cmd+Alt+S"
+  );
 
   once("editor.openFile", "Editor: Open File", () => ideStore.toast("Open file from explorer/quick open"));
+
   once(
     "editor.closeTab",
     "Editor: Close Tab",
@@ -69,6 +89,15 @@ function registerDefaultCommands() {
   once("workspace.reset", "Workspace: Reset", () => ideStore.resetWorkspace());
   once("editor.reopenClosedTab", "Editor: Reopen Closed Tab", () => ideStore.reopenClosedTab(), "Ctrl/Cmd+Shift+T");
   once("editor.format", "Editor: Format Document", () => ideStore.toast("Formatting hook executed"));
+
+  once(
+    "build.compileActive",
+    "Build: Compile Active File",
+    () => {
+      void ideStore.compileActiveFile();
+    },
+    "Ctrl/Cmd+B"
+  );
 }
 
 function Icon({ name }: { name: string }) {
@@ -224,7 +253,7 @@ export default function App() {
 
   useEffect(() => {
     registerDefaultCommands();
-    ideStore.initWorkspaceSystem();
+    void ideStore.initWorkspaceSystem();
   }, []);
 
   useEffect(() => {
@@ -234,34 +263,46 @@ export default function App() {
       if (meta && e.shiftKey && e.key.toLowerCase() === "p") {
         e.preventDefault();
         setPaletteOpen(true);
+        return;
       }
       if (meta && e.key.toLowerCase() === "p") {
         e.preventDefault();
         setQuickOpen(true);
+        return;
       }
       if (meta && e.key.toLowerCase() === "s") {
         e.preventDefault();
         ideStore.executeCommand("file.save");
+        return;
       }
       if (meta && e.altKey && e.key.toLowerCase() === "s") {
         e.preventDefault();
         ideStore.executeCommand("file.saveAll");
+        return;
       }
       if (meta && e.key.toLowerCase() === "w") {
         e.preventDefault();
         ideStore.executeCommand("editor.closeTab");
+        return;
       }
       if (meta && e.shiftKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         ideStore.executeCommand("editor.reopenClosedTab");
+        return;
       }
       if (meta && e.key.toLowerCase() === "g") {
         e.preventDefault();
         setGotoOpen(true);
+        return;
       }
       if (meta && e.key.toLowerCase() === "j") {
         e.preventDefault();
         ideStore.executeCommand("view.toggleTerminal");
+        return;
+      }
+      if (meta && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        void ideStore.compileActiveFile();
       }
     };
 
@@ -303,8 +344,9 @@ export default function App() {
       ? "split-horizontal"
       : "split-none";
 
-  const onCompile = () => {
-    ideStore.toast(`Compile triggered for ${currentWorkspace} (wire compiler action).`);
+  const onCompile = async () => {
+    const ok = await ideStore.compileActiveFile();
+    if (ok) setActiveView("editor");
   };
 
   const handlePlutusStarter = async () => {
@@ -354,7 +396,9 @@ export default function App() {
         <select
           className="workspaceSelectTop"
           value={currentWorkspace}
-          onChange={(e) => ideStore.switchWorkspace(e.target.value)}
+          onChange={(e) => {
+            void ideStore.switchWorkspace(e.target.value);
+          }}
         >
           {workspaces.map((w) => (
             <option key={w} value={w}>
@@ -566,6 +610,7 @@ export default function App() {
           <option value="javascript">JavaScript</option>
           <option value="json">JSON</option>
           <option value="markdown">Markdown</option>
+          <option value="haskell">Haskell</option>
           <option value="plaintext">Plain Text</option>
         </select>
 

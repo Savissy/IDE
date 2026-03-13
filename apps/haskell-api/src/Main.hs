@@ -2,28 +2,28 @@
 
 module Main where
 
-import Control.Monad.IO.Class (liftIO)
-import Data.Aeson (encode, decode, object, (.=))
+import Data.Aeson (decode, encode, object, (.=))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import Network.HTTP.Types (status200, status400, status404)
+import qualified Network.HTTP.Types.URI as URI
 import Network.Wai
 import Network.Wai.Handler.Warp (run)
 import Network.Wai.Middleware.Cors
 import Network.Wai.Parse
-  ( parseRequestBody
+  ( fileContent
   , lbsBackEnd
-  , fileContent
+  , parseRequestBody
   )
-import qualified Network.HTTP.Types.URI as URI
 import System.Environment (lookupEnv)
 
+import qualified Database as DB
+import qualified Jobs
 import Types
 import qualified Workspace as W
-import qualified Jobs
 import qualified WorkspaceImport
 
 main :: IO ()
@@ -44,6 +44,10 @@ loadAllowedOrigins = do
     maybe
       [ "http://127.0.0.1:5173"
       , "http://localhost:5173"
+      , "http://127.0.0.1:5174"
+      , "http://localhost:5174"
+      , "http://127.0.0.1:5175"
+      , "http://localhost:5175"
       ]
       (map TE.encodeUtf8 . map T.pack . splitComma)
       v
@@ -104,6 +108,7 @@ route req =
       body <- strictRequestBody req
       let name = formField "name" body
       W.ensureProject name
+      DB.recordWorkspaceCreated name
       pure (json (encode (OkResp True)))
 
     ("POST", ["api", "workspaces", "rename"]) -> do
@@ -111,18 +116,21 @@ route req =
       let oldName = formField "oldName" body
       let newName = formField "newName" body
       W.renameWorkspace oldName newName
+      DB.recordWorkspaceRenamed oldName newName
       pure (json (encode (OkResp True)))
 
     ("POST", ["api", "workspaces", "delete"]) -> do
       body <- strictRequestBody req
       let name = formField "name" body
       W.deleteWorkspace name
+      DB.recordWorkspaceDeleted name
       pure (json (encode (OkResp True)))
 
     ("POST", ["api", "workspaces", "delete-all"]) -> do
       body <- strictRequestBody req
       let name = formField "name" body
       W.deleteAllWorkspace name
+      DB.recordWorkspaceCleared name
       pure (json (encode (OkResp True)))
 
     ("GET", ["api", "workspaces", project, "download"]) -> do
@@ -142,7 +150,16 @@ route req =
             Nothing -> pure (badReq "Invalid backup file")
             Just backup -> do
               W.restoreWorkspaceBackup project backup
+              DB.recordWorkspaceRestored project
               pure (json (encode (OkResp True)))
+
+    ("GET", ["api", "workspaces", project, "meta"]) -> do
+      meta <- DB.getWorkspaceMeta project
+      pure (json (encode meta))
+
+    ("GET", ["api", "workspaces", project, "builds"]) -> do
+      builds <- DB.getBuildHistory project
+      pure (json (encode (ItemsResp builds)))
 
     ("GET", ["api", "workspace", project, "tree"]) -> do
       let pathQ = queryParam "path" req
@@ -200,6 +217,7 @@ route req =
       let p = formField "path" body
       let c = formField "content" body
       W.writeFileText project p c
+      DB.recordFileWrite project p
       pure (json (encode (OkResp True)))
 
     ("POST", ["api", "workspace", project, "clone"]) -> do
@@ -215,7 +233,9 @@ route req =
       pure (json (encode r))
 
     ("POST", ["api", "build", project, "start"]) -> do
-      jid <- Jobs.startCompile project
+      body <- strictRequestBody req
+      let selectedPath = formField "path" body
+      jid <- Jobs.startCompile project selectedPath
       pure (json (encode (JobIdResp jid)))
 
     ("GET", ["api", "build", jobId, "stream"]) ->

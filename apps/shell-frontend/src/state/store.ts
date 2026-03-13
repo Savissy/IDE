@@ -9,11 +9,12 @@ import {
   BottomView,
   LanguageMode,
 } from "../types";
-
-import { importFilesIntoWorkspace, setFileAtPath, type ImportedFile } from "../workspace/importers.ts";
+import { setFileAtPath, type ImportedFile } from "../workspace/importers.ts";
 import { parseGistId, fetchGistFiles } from "../workspace/gist.ts";
 import { connectDirectoryPicker, readDirectoryAsFiles } from "../workspace/localFs.ts";
 import {
+  startCompile,
+  streamUrl,
   wsClone,
   workspacesList,
   workspacesCreate,
@@ -35,11 +36,6 @@ import { searchDocs } from "../docs/searchDocs.ts";
 import { importFromHttpUrl } from "../workspace/httpImport.ts";
 import { pickFolderAsFiles } from "../workspace/folderPicker.ts";
 import { importFromIpfsRef } from "../workspace/ipfsImport.ts";
-import {
-  templateContent,
-  templateFileName,
-  type CardanoTemplateKind,
-} from "../templates/cardanoTemplates.ts";
 
 const STORAGE_KEY = "cardano.ide.workspace.v1";
 
@@ -87,6 +83,9 @@ type State = {
   workspaces: string[];
 };
 
+type CardanoTemplateKind = "plutus-starter" | "minting-policy" | "validator-script";
+type TemplateFile = { path: string; content: string };
+
 function makePersistableState(state: State) {
   const nodes = Object.fromEntries(
     Object.entries(state.nodes).map(([id, n]) => {
@@ -99,7 +98,7 @@ function makePersistableState(state: State) {
     ...state,
     nodes,
     terminalLines: state.terminalLines.slice(-200),
-    outputLines: state.outputLines.slice(-400),
+    outputLines: state.outputLines.slice(-800),
     diagnostics: state.diagnostics,
     toasts: [],
   };
@@ -124,7 +123,6 @@ function detectLanguage(name: string): LanguageMode {
   if (lower.endsWith(".js") || lower.endsWith(".jsx")) return "javascript";
   if (lower.endsWith(".json")) return "json";
   if (lower.endsWith(".md")) return "markdown";
-
   if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html" as LanguageMode;
   if (lower.endsWith(".css")) return "css" as LanguageMode;
   if (lower.endsWith(".php")) return "php" as LanguageMode;
@@ -219,6 +217,7 @@ function buildNodesFromTree(items: WorkspaceTreeItem[], workspaceName: string): 
   function addItem(item: WorkspaceTreeItem, parentId: string) {
     const isFolder = item.type === "dir";
     const id = nodeIdFor(item.type, item.path);
+
     nodes[id] = {
       id,
       name: item.name,
@@ -228,6 +227,7 @@ function buildNodesFromTree(items: WorkspaceTreeItem[], workspaceName: string): 
       content: isFolder ? undefined : "",
       language: isFolder ? undefined : detectLanguage(item.name),
     };
+
     nodes[parentId].childrenIds = [...(nodes[parentId].childrenIds ?? []), id];
 
     if (isFolder) {
@@ -239,11 +239,270 @@ function buildNodesFromTree(items: WorkspaceTreeItem[], workspaceName: string): 
   return nodes;
 }
 
+function plutusStarterScaffold(folder: string): TemplateFile[] {
+  return [
+    {
+      path: `${folder}/README.md`,
+      content: `# ${folder}
+
+This is a Plutus starter workspace scaffold.
+
+Expected compile behavior in this IDE:
+1. Save your Haskell/Plutus files
+2. Click Compile
+3. IDE runs cabal build in this project
+4. IDE runs export executables found inside app/
+5. Generated artifacts are written to artifacts/
+
+Replace the sample source with real Plutus validator/policy export code when ready.
+`,
+    },
+    {
+      path: `${folder}/cabal.project`,
+      content: `packages: .
+`,
+    },
+    {
+      path: `${folder}/${folder}.cabal`,
+      content: `cabal-version:      3.0
+name:               ${folder}
+version:            0.1.0.0
+build-type:         Simple
+
+common shared
+  default-language: GHC2021
+  ghc-options:      -Wall
+  hs-source-dirs:   src
+  build-depends:
+      base >=4.14 && <5
+
+library
+  import:           shared
+  exposed-modules:  Validator
+
+executable export-validator
+  default-language: GHC2021
+  main-is:          export-validator.hs
+  hs-source-dirs:   app, src
+  build-depends:
+      base >=4.14 && <5,
+      ${folder}
+
+executable export-policy
+  default-language: GHC2021
+  main-is:          export-policy.hs
+  hs-source-dirs:   app, src
+  build-depends:
+      base >=4.14 && <5,
+      ${folder}
+`,
+    },
+    {
+      path: `${folder}/src/Validator.hs`,
+      content: `module Validator where
+
+validatorName :: String
+validatorName = "Sample Validator"
+
+validatorCborHex :: String
+validatorCborHex = "4e4d01000033222220051200120011"
+
+policyName :: String
+policyName = "Sample Minting Policy"
+
+policyCborHex :: String
+policyCborHex = "4e4d01000033222220051200120022"
+`,
+    },
+    {
+      path: `${folder}/app/export-validator.hs`,
+      content: `module Main where
+
+import System.Directory (createDirectoryIfMissing)
+import System.FilePath ((</>))
+import Validator
+
+main :: IO ()
+main = do
+  createDirectoryIfMissing True "artifacts"
+  writeFile ("artifacts" </> "validator.plutus") validatorName
+  writeFile ("artifacts" </> "validator.cbor") validatorCborHex
+  writeFile ("artifacts" </> "validator.script") validatorCborHex
+  putStrLn "validator artifacts written"
+`,
+    },
+    {
+      path: `${folder}/app/export-policy.hs`,
+      content: `module Main where
+
+import System.Directory (createDirectoryIfMissing)
+import System.FilePath ((</>))
+import Validator
+
+main :: IO ()
+main = do
+  createDirectoryIfMissing True "artifacts"
+  writeFile ("artifacts" </> "policy.plutus") policyName
+  writeFile ("artifacts" </> "policy.cbor") policyCborHex
+  writeFile ("artifacts" </> "policy.script") policyCborHex
+  putStrLn "policy artifacts written"
+`,
+    },
+  ];
+}
+
+function mintingPolicyScaffold(folder: string): TemplateFile[] {
+  return [
+    {
+      path: `${folder}/README.md`,
+      content: `# ${folder}
+
+Minting policy scaffold.
+Compile generates artifacts into artifacts/.
+`,
+    },
+    {
+      path: `${folder}/cabal.project`,
+      content: `packages: .
+`,
+    },
+    {
+      path: `${folder}/${folder}.cabal`,
+      content: `cabal-version:      3.0
+name:               ${folder}
+version:            0.1.0.0
+build-type:         Simple
+
+common shared
+  default-language: GHC2021
+  ghc-options:      -Wall
+  hs-source-dirs:   src
+  build-depends:
+      base >=4.14 && <5
+
+library
+  import:           shared
+  exposed-modules:  MintingPolicy
+
+executable export-policy
+  default-language: GHC2021
+  main-is:          export-policy.hs
+  hs-source-dirs:   app, src
+  build-depends:
+      base >=4.14 && <5,
+      ${folder}
+`,
+    },
+    {
+      path: `${folder}/src/MintingPolicy.hs`,
+      content: `module MintingPolicy where
+
+policyName :: String
+policyName = "Sample Minting Policy"
+
+policyCborHex :: String
+policyCborHex = "4e4d01000033222220051200120033"
+`,
+    },
+    {
+      path: `${folder}/app/export-policy.hs`,
+      content: `module Main where
+
+import System.Directory (createDirectoryIfMissing)
+import System.FilePath ((</>))
+import MintingPolicy
+
+main :: IO ()
+main = do
+  createDirectoryIfMissing True "artifacts"
+  writeFile ("artifacts" </> "policy.plutus") policyName
+  writeFile ("artifacts" </> "policy.cbor") policyCborHex
+  writeFile ("artifacts" </> "policy.script") policyCborHex
+  putStrLn "policy artifacts written"
+`,
+    },
+  ];
+}
+
+function validatorScriptScaffold(folder: string): TemplateFile[] {
+  return [
+    {
+      path: `${folder}/README.md`,
+      content: `# ${folder}
+
+Validator script scaffold.
+Compile generates artifacts into artifacts/.
+`,
+    },
+    {
+      path: `${folder}/cabal.project`,
+      content: `packages: .
+`,
+    },
+    {
+      path: `${folder}/${folder}.cabal`,
+      content: `cabal-version:      3.0
+name:               ${folder}
+version:            0.1.0.0
+build-type:         Simple
+
+common shared
+  default-language: GHC2021
+  ghc-options:      -Wall
+  hs-source-dirs:   src
+  build-depends:
+      base >=4.14 && <5
+
+library
+  import:           shared
+  exposed-modules:  ScriptValidator
+
+executable export-validator
+  default-language: GHC2021
+  main-is:          export-validator.hs
+  hs-source-dirs:   app, src
+  build-depends:
+      base >=4.14 && <5,
+      ${folder}
+`,
+    },
+    {
+      path: `${folder}/src/ScriptValidator.hs`,
+      content: `module ScriptValidator where
+
+scriptName :: String
+scriptName = "Sample Spending Validator"
+
+scriptCborHex :: String
+scriptCborHex = "4e4d01000033222220051200120044"
+`,
+    },
+    {
+      path: `${folder}/app/export-validator.hs`,
+      content: `module Main where
+
+import System.Directory (createDirectoryIfMissing)
+import System.FilePath ((</>))
+import ScriptValidator
+
+main :: IO ()
+main = do
+  createDirectoryIfMissing True "artifacts"
+  writeFile ("artifacts" </> "validator.plutus") scriptName
+  writeFile ("artifacts" </> "validator.cbor") scriptCborHex
+  writeFile ("artifacts" </> "validator.script") scriptCborHex
+  putStrLn "validator artifacts written"
+`,
+    },
+  ];
+}
+
 class IDEStore {
   private state: State = loadState();
   private listeners = new Set<() => void>();
   private bootstrapped = false;
   private loadingFileIds = new Set<string>();
+  private compileStream: EventSource | null = null;
 
   subscribe = (cb: () => void) => {
     this.listeners.add(cb);
@@ -262,6 +521,65 @@ class IDEStore {
     this.listeners.forEach((l) => l());
   };
 
+  private closeCompileStream() {
+    if (this.compileStream) {
+      this.compileStream.close();
+      this.compileStream = null;
+    }
+  }
+
+  private pushOutputLine(line: string) {
+    this.setState((s) => ({
+      ...s,
+      outputLines: [...s.outputLines, line].slice(-800),
+      layout: { ...s.layout, showBottomPanel: true },
+      bottomView: "output",
+    }));
+  }
+
+  private async refreshWorkspaceTreePreservingOpenTabs() {
+    const project = this.state.currentWorkspace;
+    const res = await wsTree(project, "");
+    const freshNodes = buildNodesFromTree((res.items ?? []) as WorkspaceTreeItem[], project);
+
+    this.setState((s) => {
+      const openNodeIds = new Set(s.openTabs.map((t) => t.nodeId));
+      const mergedNodes: Record<string, WorkspaceNode> = {};
+
+      for (const [id, fresh] of Object.entries(freshNodes)) {
+        const prev = s.nodes[id];
+        if (openNodeIds.has(id) && prev?.type === "file" && fresh.type === "file") {
+          mergedNodes[id] = {
+            ...fresh,
+            content: prev.content ?? "",
+            language: prev.language ?? fresh.language,
+          };
+        } else {
+          mergedNodes[id] = fresh;
+        }
+      }
+
+      const openTabs = s.openTabs.filter((t) => mergedNodes[t.nodeId]);
+      const activeTabId = openTabs.some((t) => t.id === s.activeTabId) ? s.activeTabId : openTabs[0]?.id ?? null;
+      const dirty = Object.fromEntries(Object.entries(s.dirty).filter(([nodeId]) => !!mergedNodes[nodeId]));
+      const splits = s.splits.map((sp) => {
+        const validTabIds = sp.tabIds.filter((id) => openTabs.some((t) => t.id === id));
+        const activeSplitTabId =
+          sp.activeTabId && validTabIds.includes(sp.activeTabId) ? sp.activeTabId : validTabIds[0] ?? null;
+        return { ...sp, tabIds: validTabIds, activeTabId: activeSplitTabId };
+      });
+
+      return {
+        ...s,
+        nodes: mergedNodes,
+        openTabs,
+        activeTabId,
+        dirty,
+        splits,
+      };
+    });
+  }
+
   async initWorkspaceSystem() {
     if (this.bootstrapped) return;
     this.bootstrapped = true;
@@ -269,6 +587,7 @@ class IDEStore {
     try {
       const res = await workspacesList();
       let items = res.items ?? [];
+
       if (!items.length) {
         await workspacesCreate("default_workspace");
         items = ["default_workspace"];
@@ -364,6 +683,7 @@ class IDEStore {
     try {
       const res = await wsTree(name, "");
       const nodes = buildNodesFromTree((res.items ?? []) as WorkspaceTreeItem[], name);
+      this.closeCompileStream();
 
       this.setState((s) => ({
         ...s,
@@ -375,7 +695,7 @@ class IDEStore {
         closedTabStack: [],
         splits: s.splits.map((sp) => ({ ...sp, tabIds: [], activeTabId: null })),
         recentFiles: [],
-        outputLines: [...s.outputLines, `[workspace] switched to ${name}`].slice(-400),
+        outputLines: [...s.outputLines, `[workspace] switched to ${name}`].slice(-800),
       }));
     } catch (e) {
       console.error(e);
@@ -427,18 +747,22 @@ class IDEStore {
   async deleteCurrentWorkspace() {
     const name = this.state.currentWorkspace;
     if (!window.confirm(`Delete workspace "${name}"?`)) return false;
+
     try {
       const res = await workspacesDelete(name);
       if (!res.ok) {
         this.toast("Delete failed", "error");
         return false;
       }
+
       await this.refreshWorkspaces();
+
       const next = this.state.workspaces.find((w) => w !== name) ?? "default_workspace";
       if (!this.state.workspaces.length) {
         await workspacesCreate("default_workspace");
         await this.refreshWorkspaces();
       }
+
       await this.switchWorkspace(next);
       this.toast(`Deleted workspace: ${name}`);
       return true;
@@ -452,6 +776,7 @@ class IDEStore {
   async deleteAllCurrentWorkspace() {
     const name = this.state.currentWorkspace;
     if (!window.confirm(`Delete all files in "${name}"?`)) return false;
+
     try {
       const res = await workspacesDeleteAll(name);
       if (!res.ok) {
@@ -626,14 +951,16 @@ class IDEStore {
   async saveFile(tabId: string) {
     const tab = this.state.openTabs.find((t) => t.id === tabId);
     if (!tab) return;
+
     const node = this.state.nodes[tab.nodeId];
     const content = node?.content ?? "";
+
     try {
       await wsWrite(this.state.currentWorkspace, tab.path, content);
       this.setState((s) => {
         const dirty = { ...s.dirty };
         delete dirty[tab.nodeId];
-        return { ...s, dirty, outputLines: [...s.outputLines, `[save] ${tab.path}`].slice(-400) };
+        return { ...s, dirty, outputLines: [...s.outputLines, `[save] ${tab.path}`].slice(-800) };
       });
       this.toast("File saved");
     } catch (e) {
@@ -650,6 +977,90 @@ class IDEStore {
       }
     }
     this.toast("All files saved");
+  }
+
+  async compileActiveFile(): Promise<boolean> {
+    const activeTab = this.state.openTabs.find((t) => t.id === this.state.activeTabId) ?? null;
+    if (!activeTab) {
+      this.toast("Open a Haskell file first.", "error");
+      return false;
+    }
+
+    const activeNode = this.state.nodes[activeTab.nodeId];
+    if (!activeNode || activeNode.type !== "file") {
+      this.toast("No active file selected.", "error");
+      return false;
+    }
+
+    const isHs = activeTab.path.toLowerCase().endsWith(".hs");
+    if (!isHs) {
+      this.toast("Selected file must be a .hs file.", "error");
+      return false;
+    }
+
+    if (this.state.dirty[activeNode.id]) {
+      await this.saveFile(activeTab.id);
+    }
+
+    this.closeCompileStream();
+
+    this.setState((s) => ({
+      ...s,
+      layout: { ...s.layout, showBottomPanel: true },
+      bottomView: "output",
+      outputLines: [...s.outputLines, `[compile] starting ${activeTab.path}`].slice(-800),
+    }));
+
+    try {
+      const res = await startCompile(this.state.currentWorkspace, activeTab.path);
+      if (!res?.jobId) {
+        this.toast("Failed to start compile job.", "error");
+        return false;
+      }
+
+      const es = new EventSource(streamUrl(res.jobId));
+      this.compileStream = es;
+
+      es.addEventListener("log", (event: MessageEvent) => {
+        this.pushOutputLine(String(event.data ?? ""));
+      });
+
+      es.addEventListener("done", async (event: MessageEvent) => {
+        let ok = false;
+        try {
+          const payload = JSON.parse(String(event.data ?? "{}"));
+          ok = !!payload.ok;
+        } catch {
+          ok = false;
+        }
+
+        this.pushOutputLine(ok ? "[compile] completed successfully" : "[compile] failed");
+        this.closeCompileStream();
+
+        if (ok) {
+          try {
+            await this.refreshWorkspaceTreePreservingOpenTabs();
+            this.toast("Compile completed. Artifacts refreshed.");
+          } catch (e) {
+            console.error(e);
+          }
+        } else {
+          this.toast("Compile failed. Check Output.", "error");
+        }
+      });
+
+      es.onerror = () => {
+        if (this.compileStream !== es) return;
+        this.pushOutputLine("[compile] stream disconnected");
+        this.closeCompileStream();
+      };
+
+      return true;
+    } catch (e) {
+      console.error(e);
+      this.toast("Failed to start compile job.", "error");
+      return false;
+    }
   }
 
   setCursor(line: number, column: number) {
@@ -690,68 +1101,57 @@ class IDEStore {
     }
   }
 
-  private async uniquePathForFile(baseName: string, parentId = "root"): Promise<string> {
-    const parentPath = pathOf(parentId, this.state.nodes);
-    const dot = baseName.lastIndexOf(".");
-    const stem = dot > 0 ? baseName.slice(0, dot) : baseName;
-    const ext = dot > 0 ? baseName.slice(dot) : "";
-
-    let candidate = baseName;
-    let counter = 2;
-
-    const existingPaths = new Set(
+  private async uniqueRootFolderName(base: string): Promise<string> {
+    const existing = new Set(
       Object.values(this.state.nodes)
-        .filter((n) => n.type === "file")
-        .map((n) => pathOf(n.id, this.state.nodes))
+        .filter((n) => n.type === "folder" && n.parentId === "root")
+        .map((n) => n.name)
     );
 
-    let fullPath = parentPath ? `${parentPath}/${candidate}` : candidate;
+    let candidate = base;
+    let i = 2;
 
-    while (existingPaths.has(fullPath)) {
-      candidate = `${stem}-${counter}${ext}`;
-      fullPath = parentPath ? `${parentPath}/${candidate}` : candidate;
-      counter += 1;
+    while (existing.has(candidate)) {
+      candidate = `${base}-${i}`;
+      i += 1;
     }
 
-    return fullPath;
+    return candidate;
   }
 
   async createTemplateFile(kind: CardanoTemplateKind): Promise<string | null> {
     try {
       const workspace = this.state.currentWorkspace || "default_workspace";
-      const parentId = "root";
-      const fileName = templateFileName(kind);
-      const content = templateContent(kind);
-      const fullPath = await this.uniquePathForFile(fileName, parentId);
+      const folder =
+        kind === "plutus-starter"
+          ? await this.uniqueRootFolderName("plutus-starter")
+          : kind === "minting-policy"
+          ? await this.uniqueRootFolderName("minting-policy")
+          : await this.uniqueRootFolderName("validator-script");
 
-      await wsWrite(workspace, fullPath, content);
+      const files =
+        kind === "plutus-starter"
+          ? plutusStarterScaffold(folder)
+          : kind === "minting-policy"
+          ? mintingPolicyScaffold(folder)
+          : validatorScriptScaffold(folder);
+
+      for (const file of files) {
+        await wsWrite(workspace, file.path, file.content);
+      }
+
       await this.switchWorkspace(workspace);
 
-      const newId = nodeIdFor("file", fullPath);
+      const openPath =
+        kind === "plutus-starter"
+          ? `${folder}/src/Validator.hs`
+          : kind === "minting-policy"
+          ? `${folder}/src/MintingPolicy.hs`
+          : `${folder}/src/ScriptValidator.hs`;
 
-      this.setState((s) => ({
-        ...s,
-        nodes: {
-          ...s.nodes,
-          [newId]: s.nodes[newId]
-            ? {
-                ...s.nodes[newId],
-                content,
-                language: detectLanguage(fileName),
-              }
-            : {
-                id: newId,
-                name: fileName,
-                type: "file",
-                parentId: "root",
-                content,
-                language: detectLanguage(fileName),
-              },
-        },
-      }));
-
+      const newId = nodeIdFor("file", openPath);
       this.openFile(newId);
-      this.toast(`${fileName} created in ${workspace}`);
+      this.toast(`${folder} created in ${workspace}`);
       return newId;
     } catch (e) {
       console.error(e);
@@ -798,7 +1198,7 @@ class IDEStore {
   duplicateNode(id: string) {
     const node = this.state.nodes[id];
     if (!node || !node.parentId) return;
-    this.createNode(node.parentId, node.type, `${node.name}.copy`);
+    void this.createNode(node.parentId, node.type, `${node.name}.copy`);
   }
 
   async moveNode(id: string, parentId: string) {
@@ -861,15 +1261,15 @@ class IDEStore {
   }
 
   exportWorkspace() {
-    this.downloadCurrentWorkspace();
+    void this.downloadCurrentWorkspace();
   }
 
   importWorkspace(file: File) {
-    this.restoreCurrentWorkspaceFromFile(file);
+    void this.restoreCurrentWorkspaceFromFile(file);
   }
 
   resetWorkspace() {
-    this.deleteAllCurrentWorkspace();
+    void this.deleteAllCurrentWorkspace();
   }
 
   private async persistImportedFiles(files: ImportedFile[], rootFolderName = "imports") {
@@ -1040,4 +1440,4 @@ export function useIDEStore<T>(selector: (state: State) => T) {
   return useSyncExternalStore(ideStore.subscribe, () => selector(ideStore.getState()), () => selector(ideStore.getState()));
 }
 
-export const toPath = pathOf; 
+export const toPath = pathOf;
