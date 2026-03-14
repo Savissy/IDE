@@ -310,7 +310,8 @@ button, input, select { font: inherit; }
   min-height: 0;
   min-width: 0;
   height: 100%;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   position: relative;
   z-index: 1;
 }
@@ -319,7 +320,9 @@ button, input, select { font: inherit; }
   display: block;
   min-height: 0;
   min-width: 0;
-  overflow: hidden;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
   scroll-behavior: auto;
   overscroll-behavior: contain;
 }
@@ -1162,16 +1165,18 @@ button, input, select { font: inherit; }
 
 /* Slim scrollbars like Remix */
 .homeWrap,
+.homeStage,
 .sidePanel,
 .rxTreeWrap,
 .bottomBody,
 .docDropdown,
 .rxWorkspaceOptions {
   scrollbar-width: thin;
-  scrollbar-color: rgba(151,163,182,.55) transparent;
+  scrollbar-color: rgba(151,163,182,.45) transparent;
 }
 
 .homeWrap::-webkit-scrollbar,
+.homeStage::-webkit-scrollbar,
 .sidePanel::-webkit-scrollbar,
 .rxTreeWrap::-webkit-scrollbar,
 .bottomBody::-webkit-scrollbar,
@@ -1182,6 +1187,7 @@ button, input, select { font: inherit; }
 }
 
 .homeWrap::-webkit-scrollbar-track,
+.homeStage::-webkit-scrollbar-track,
 .sidePanel::-webkit-scrollbar-track,
 .rxTreeWrap::-webkit-scrollbar-track,
 .bottomBody::-webkit-scrollbar-track,
@@ -1191,6 +1197,7 @@ button, input, select { font: inherit; }
 }
 
 .homeWrap::-webkit-scrollbar-thumb,
+.homeStage::-webkit-scrollbar-thumb,
 .sidePanel::-webkit-scrollbar-thumb,
 .rxTreeWrap::-webkit-scrollbar-thumb,
 .bottomBody::-webkit-scrollbar-thumb,
@@ -1201,6 +1208,7 @@ button, input, select { font: inherit; }
 }
 
 .homeWrap::-webkit-scrollbar-thumb:hover,
+.homeStage::-webkit-scrollbar-thumb:hover,
 .sidePanel::-webkit-scrollbar-thumb:hover,
 .rxTreeWrap::-webkit-scrollbar-thumb:hover,
 .bottomBody::-webkit-scrollbar-thumb:hover,
@@ -1209,10 +1217,10 @@ button, input, select { font: inherit; }
   background: rgba(151,163,182,.7);
 }
 
-/* Hide home-page vertical scrollbar when terminal is hidden */
+/* Hide home-page vertical scrollbar when terminal is hidden 
 .app.terminal-hidden .homeWrap {
   overflow-y: hidden;
-}
+} */
 
 /* Keep explorer scrollbar available, but slim */
 .app.terminal-hidden .rxTreeWrap,

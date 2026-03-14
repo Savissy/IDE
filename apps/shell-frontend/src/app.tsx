@@ -4,9 +4,12 @@ import { EditorTabs } from "./components/editor/EditorTabs";
 import { ExplorerTree } from "./components/explorer/ExplorerTree";
 import { BottomViews } from "./components/terminal/BottomViews";
 import { HomePage } from "./components/home/HomePage.tsx";
+import { LanguageSetupPage } from "./components/home/LanguageSetupPage";
 import { ideStore, useIDEStore } from "./state/store";
 import { MonacoEditor } from "./ui/MonacoEditor";
-import { LanguageMode } from "./types";
+import { LanguageMode, StarterLanguage } from "./types";
+
+const SETUP_STORAGE_KEY = "cardano.ide.language.setup.v1";
 
 class PaletteErrorBoundary extends React.Component<
   { onError?: (err: unknown) => void; children: React.ReactNode },
@@ -239,7 +242,10 @@ export default function App() {
   const [gotoOpen, setGotoOpen] = useState(false);
   const [gotoLine, setGotoLine] = useState<number | null>(null);
   const [search, setSearch] = useState("");
-  const [activeView, setActiveView] = useState<"home" | "editor">("home");
+  const [activeView, setActiveView] = useState<"setup" | "home" | "editor">(() => {
+    if (typeof window === "undefined") return "setup";
+    return window.localStorage.getItem(SETUP_STORAGE_KEY) ? "home" : "setup";
+  });
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const bootRef = useRef(false);
@@ -364,6 +370,19 @@ export default function App() {
     if (nodeId) setActiveView("editor");
   };
 
+  const handleLanguageStarter = async (language: StarterLanguage) => {
+    const nodeId = await ideStore.createLanguageStarter(language);
+    if (nodeId) {
+      window.localStorage.setItem(SETUP_STORAGE_KEY, language);
+      setActiveView("editor");
+    }
+  };
+
+  const handleSkipSetup = () => {
+    window.localStorage.setItem(SETUP_STORAGE_KEY, "skipped");
+    setActiveView("home");
+  };
+
   return (
     <div className={`app ${state.theme} ${state.layout.showBottomPanel ? "terminal-open" : "terminal-hidden"}`}>
       <input
@@ -390,6 +409,17 @@ export default function App() {
           >
             <Icon name="home" />
             <span>Home</span>
+          </button>
+
+          <button
+            className="topIconBtn"
+            title="Starter Templates"
+            onClick={() => {
+              setActiveView("setup");
+            }}
+          >
+            <Icon name="extensions" />
+            <span>Templates</span>
           </button>
         </div>
 
@@ -518,14 +548,19 @@ export default function App() {
         )}
 
         <main className={`main ${splitClass}`}>
-          <div className={"stageShell" + (activeView === "home" ? " isHome" : " isEditor")}>
-            {activeView === "home" ? (
+          <div className={"stageShell" + (activeView === "editor" ? " isEditor" : " isHome")}>
+            {activeView === "setup" ? (
+              <div className="mainStage homeStage">
+                <LanguageSetupPage onCreateStarter={handleLanguageStarter} onSkip={handleSkipSetup} />
+              </div>
+            ) : activeView === "home" ? (
               <div className="mainStage homeStage">
                 <HomePage
                   onStartCoding={() => setActiveView("editor")}
                   onPlutusStarter={handlePlutusStarter}
                   onMintingPolicy={handleMintingPolicy}
                   onValidatorScript={handleValidatorScript}
+                  onOpenLanguageSetup={() => setActiveView("setup")}
                 />
               </div>
             ) : (
@@ -611,6 +646,7 @@ export default function App() {
           <option value="json">JSON</option>
           <option value="markdown">Markdown</option>
           <option value="haskell">Haskell</option>
+          <option value="python">Python</option>
           <option value="plaintext">Plain Text</option>
         </select>
 

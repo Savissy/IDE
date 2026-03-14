@@ -29,17 +29,19 @@ export function HomePage({
   onPlutusStarter,
   onMintingPolicy,
   onValidatorScript,
+  onOpenLanguageSetup,
 }: {
   onStartCoding: () => void;
   onPlutusStarter: () => void;
   onMintingPolicy: () => void;
   onValidatorScript: () => void;
+  onOpenLanguageSetup: () => void;
 }) {
   const workspaces = useIDEStore((s) => s.workspaces);
   const currentWorkspace = useIDEStore((s) => s.currentWorkspace);
 
   useEffect(() => {
-    ideStore.initWorkspaceSystem();
+    void ideStore.initWorkspaceSystem();
   }, []);
 
   const onNew = async () => {
@@ -182,6 +184,9 @@ export function HomePage({
       <div className="homePills">
         <button className="pill primary" onClick={onStartCoding}>
           Start Coding
+        </button>
+        <button className="pill" onClick={onOpenLanguageSetup}>
+          Language Templates
         </button>
         <button className="pill" onClick={onPlutusStarter}>
           Plutus Starter

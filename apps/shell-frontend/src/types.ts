@@ -1,5 +1,21 @@
 export type NodeType = "file" | "folder";
-export type LanguageMode = "typescript" | "javascript" | "json" | "markdown" | "plaintext";
+
+export type LanguageMode =
+  | "typescript"
+  | "javascript"
+  | "json"
+  | "markdown"
+  | "plaintext"
+  | "haskell"
+  | "python"
+  | "html"
+  | "css"
+  | "php"
+  | "xml"
+  | "yaml"
+  | "sql";
+
+export type StarterLanguage = "haskell" | "aiken" | "opshin" | "helios" | "midnight";
 
 export type WorkspaceNode = {
   id: string;

@@ -8,6 +8,7 @@ import {
   ActivityView,
   BottomView,
   LanguageMode,
+  StarterLanguage,
 } from "../types";
 import { setFileAtPath, type ImportedFile } from "../workspace/importers.ts";
 import { parseGistId, fetchGistFiles } from "../workspace/gist.ts";
@@ -36,6 +37,7 @@ import { searchDocs } from "../docs/searchDocs.ts";
 import { importFromHttpUrl } from "../workspace/httpImport.ts";
 import { pickFolderAsFiles } from "../workspace/folderPicker.ts";
 import { importFromIpfsRef } from "../workspace/ipfsImport.ts";
+import { buildLanguageStarterTemplate, type TemplateFile } from "../templates/languageStarterRegistry.ts";
 
 const STORAGE_KEY = "cardano.ide.workspace.v1";
 
@@ -84,7 +86,6 @@ type State = {
 };
 
 type CardanoTemplateKind = "plutus-starter" | "minting-policy" | "validator-script";
-type TemplateFile = { path: string; content: string };
 
 function makePersistableState(state: State) {
   const nodes = Object.fromEntries(
@@ -123,14 +124,19 @@ function detectLanguage(name: string): LanguageMode {
   if (lower.endsWith(".js") || lower.endsWith(".jsx")) return "javascript";
   if (lower.endsWith(".json")) return "json";
   if (lower.endsWith(".md")) return "markdown";
-  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html" as LanguageMode;
-  if (lower.endsWith(".css")) return "css" as LanguageMode;
-  if (lower.endsWith(".php")) return "php" as LanguageMode;
-  if (lower.endsWith(".hs")) return "haskell" as LanguageMode;
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
+  if (lower.endsWith(".css")) return "css";
+  if (lower.endsWith(".php")) return "php";
+  if (lower.endsWith(".hs")) return "haskell";
+  if (lower.endsWith(".py")) return "python";
   if (lower.endsWith(".cbor")) return "plaintext";
-  if (lower.endsWith(".xml")) return "xml" as LanguageMode;
-  if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "yaml" as LanguageMode;
-  if (lower.endsWith(".sql")) return "sql" as LanguageMode;
+  if (lower.endsWith(".ak")) return "plaintext";
+  if (lower.endsWith(".hl")) return "plaintext";
+  if (lower.endsWith(".compact")) return "plaintext";
+  if (lower.endsWith(".mid")) return "plaintext";
+  if (lower.endsWith(".xml")) return "xml";
+  if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "yaml";
+  if (lower.endsWith(".sql")) return "sql";
 
   return "plaintext";
 }
@@ -982,7 +988,7 @@ class IDEStore {
   async compileActiveFile(): Promise<boolean> {
     const activeTab = this.state.openTabs.find((t) => t.id === this.state.activeTabId) ?? null;
     if (!activeTab) {
-      this.toast("Open a Haskell file first.", "error");
+      this.toast("Open a contract file first.", "error");
       return false;
     }
 
@@ -992,9 +998,31 @@ class IDEStore {
       return false;
     }
 
-    const isHs = activeTab.path.toLowerCase().endsWith(".hs");
+    const lowerPath = activeTab.path.toLowerCase();
+
+    if (lowerPath.endsWith(".ak")) {
+      this.toast("Aiken starter generation is supported, but backend compile wiring is not connected yet.", "error");
+      return false;
+    }
+
+    if (lowerPath.endsWith(".py")) {
+      this.toast("Opshin starter generation is supported, but backend compile wiring is not connected yet.", "error");
+      return false;
+    }
+
+    if (lowerPath.endsWith(".hl")) {
+      this.toast("Helios starter generation is supported, but backend compile wiring is not connected yet.", "error");
+      return false;
+    }
+
+    if (lowerPath.endsWith(".compact") || lowerPath.endsWith(".mid")) {
+      this.toast("Midnight starter generation is supported, but backend compile wiring is not connected yet.", "error");
+      return false;
+    }
+
+    const isHs = lowerPath.endsWith(".hs");
     if (!isHs) {
-      this.toast("Selected file must be a .hs file.", "error");
+      this.toast("Selected file must be a .hs file for the current compile pipeline.", "error");
       return false;
     }
 
@@ -1156,6 +1184,29 @@ class IDEStore {
     } catch (e) {
       console.error(e);
       this.toast("Failed to create template file", "error");
+      return null;
+    }
+  }
+
+  async createLanguageStarter(language: StarterLanguage): Promise<string | null> {
+    try {
+      const workspace = this.state.currentWorkspace || "default_workspace";
+      const folder = await this.uniqueRootFolderName(`${language}-starter`);
+      const bundle = buildLanguageStarterTemplate(language, folder);
+
+      for (const file of bundle.files) {
+        await wsWrite(workspace, file.path, file.content);
+      }
+
+      await this.switchWorkspace(workspace);
+
+      const newId = nodeIdFor("file", bundle.openPath);
+      this.openFile(newId);
+      this.toast(`${folder} created in ${workspace}`);
+      return newId;
+    } catch (e) {
+      console.error(e);
+      this.toast("Failed to create language starter", "error");
       return null;
     }
   }
